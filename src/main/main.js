@@ -3,9 +3,14 @@ const fs = require("fs/promises");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const LINEAR_ENV_KEYS = ["LINEAR_API_KEY", "LINEAR_TEAM_KEY"];
+const ALLOWED_THEMES = new Set(["dark", "light"]);
 
 function getEnvFilePath() {
   return path.join(app.getAppPath(), ".env");
+}
+
+function getThemeSettingsPath() {
+  return path.join(app.getPath("userData"), "theme-settings.json");
 }
 
 function parseEnvLine(line) {
@@ -101,6 +106,35 @@ async function saveLinearSettings(apiKey, teamKey) {
   };
 }
 
+async function getThemeSettings() {
+  const themeSettingsPath = getThemeSettingsPath();
+  try {
+    const source = await fs.readFile(themeSettingsPath, "utf8");
+    const parsed = JSON.parse(source);
+    const theme = String(parsed?.theme || "").trim().toLowerCase();
+    if (ALLOWED_THEMES.has(theme)) {
+      return { theme };
+    }
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") {
+      console.warn("Could not read theme settings:", error);
+    }
+  }
+  return { theme: "dark" };
+}
+
+async function saveThemeSettings(theme) {
+  const normalizedTheme = String(theme || "").trim().toLowerCase();
+  if (!ALLOWED_THEMES.has(normalizedTheme)) {
+    throw new Error("Invalid theme. Use 'dark' or 'light'.");
+  }
+
+  const themeSettingsPath = getThemeSettingsPath();
+  const payload = `${JSON.stringify({ theme: normalizedTheme }, null, 2)}\n`;
+  await fs.writeFile(themeSettingsPath, payload, "utf8");
+  return { theme: normalizedTheme };
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -122,6 +156,8 @@ app.whenReady().then(() => {
   ipcMain.handle("linear-settings:save", (_event, settings) =>
     saveLinearSettings(settings?.apiKey, settings?.teamKey)
   );
+  ipcMain.handle("theme-settings:get", () => getThemeSettings());
+  ipcMain.handle("theme-settings:save", (_event, settings) => saveThemeSettings(settings?.theme));
   createWindow();
 
   app.on("activate", () => {

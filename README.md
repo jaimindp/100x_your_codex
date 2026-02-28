@@ -3,6 +3,20 @@
 Electron monitor UI that can start/stop `codex app-server` and stream logs.
 It also includes an interactive Mermaid-based Linear issue DAG view.
 
+## App shell + shared navigation
+
+- The renderer now uses a shared app shell with:
+  - Left sidebar for top-level screen navigation.
+  - Shared header with active screen title/subtitle.
+  - Shared `Last refresh` status chip.
+  - Dark/Light theme toggle with persisted preference.
+- Current screens in nav:
+  - Overview, Timeline, Live Sessions, Usage, Credits + Context, MCP + Skills,
+    Git + Worktrees, Dependency Map, Linear Graph, Health, Settings,
+    Build Snapshots, Server Manager.
+- `Linear Graph` is fully functional in this build; non-graph screens are scaffolded
+  placeholders to support progressive integration.
+
 ## Project structure
 
 ```text
@@ -29,24 +43,6 @@ It also includes an interactive Mermaid-based Linear issue DAG view.
 ```bash
 npm install
 npm run start
-```
-
-## Playwright MCP (recommended for UI automation)
-
-Start a local Playwright MCP server from this project:
-
-```bash
-npm run mcp:playwright
-```
-
-This exposes an MCP endpoint on the default local port from `@playwright/mcp`.
-
-For Electron runtime inspection, launch Electron with remote debugging enabled, then point Playwright MCP to that CDP endpoint:
-
-```bash
-cd Monitor
-electron . --remote-debugging-port=9222
-npx playwright-mcp --cdp-endpoint http://127.0.0.1:9222
 ```
 
 ## Codex app-server integration
