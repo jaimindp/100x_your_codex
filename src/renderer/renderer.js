@@ -2,6 +2,7 @@ const linearApiKeyInput = document.getElementById("linear-api-key");
 const linearTeamKeyInput = document.getElementById("linear-team-key");
 const graphLoadLinearBtn = document.getElementById("graph-load-linear");
 const graphLoadMockBtn = document.getElementById("graph-load-mock");
+const graphControlsPanel = document.getElementById("graph-controls-panel");
 const graphStatusEl = document.getElementById("graph-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
@@ -66,6 +67,7 @@ if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
       const issues = await getTeamIssues(apiKey, team.id);
       await renderIssueGraph(issues);
       setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
+      collapseGraphSettingsIfConfigured(apiKey, teamKey);
     } catch (error) {
       setGraphStatus(`Graph status: ${errorMessage(error)}`);
     } finally {
@@ -91,6 +93,7 @@ async function loadLinearSettings() {
     const settings = await window.monitor.linearSettings.get();
     linearApiKeyInput.value = settings.apiKey || "";
     linearTeamKeyInput.value = settings.teamKey || "";
+    collapseGraphSettingsIfConfigured(settings.apiKey, settings.teamKey);
   } catch (error) {
     setGraphStatus(`Graph status: could not load .env settings (${errorMessage(error)})`);
   }
@@ -101,6 +104,18 @@ async function persistLinearSettings(apiKey, teamKey) {
     return;
   }
   await window.monitor.linearSettings.save({ apiKey, teamKey });
+}
+
+function collapseGraphSettingsIfConfigured(apiKey, teamKey) {
+  if (!graphControlsPanel) {
+    return;
+  }
+
+  const hasApiKey = Boolean(String(apiKey || "").trim());
+  const hasTeamKey = Boolean(String(teamKey || "").trim());
+  if (hasApiKey && hasTeamKey) {
+    graphControlsPanel.open = false;
+  }
 }
 
 function errorMessage(error) {
