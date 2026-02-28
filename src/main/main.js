@@ -4,11 +4,13 @@ const fsSync = require("fs");
 const fs = require("fs/promises");
 const { spawn } = require("child_process");
 const { app, BrowserWindow, ipcMain } = require("electron");
+const { createMonitorDataService } = require("./monitor-data");
 
 const LINEAR_ENV_KEYS = ["LINEAR_API_KEY", "LINEAR_TEAM_KEY"];
 const ALLOWED_THEMES = new Set(["dark", "light"]);
 const GITHUB_REPO_SCAN_TIMEOUT_MS = 120000;
 const NODE_BIN = process.env.NODE_BIN || "node";
+let monitorDataService = null;
 
 function getEnvFilePath() {
   return path.join(app.getAppPath(), ".env");
@@ -276,6 +278,9 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  monitorDataService = createMonitorDataService({
+    userDataPath: app.getPath("userData")
+  });
   ipcMain.handle("linear-settings:get", () => getLinearSettings());
   ipcMain.handle("linear-settings:save", (_event, settings) =>
     saveLinearSettings(settings?.apiKey, settings?.teamKey)
@@ -289,6 +294,15 @@ app.whenReady().then(() => {
     const roots = getValidatedDiscoveryRoots(payload);
     return runGithubRepoDiscovery(roots);
   });
+  ipcMain.handle("monitor-data:get-dashboard", () =>
+    monitorDataService ? monitorDataService.getDashboard() : null
+  );
+  ipcMain.handle("monitor-data:run-ingestion", () =>
+    monitorDataService ? monitorDataService.runIngestion() : null
+  );
+
+  // Prime the local-first cache on launch so dashboard panels have fresh telemetry.
+  monitorDataService.runIngestion();
   createWindow();
 
   app.on("activate", () => {
@@ -299,6 +313,10 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  if (monitorDataService) {
+    monitorDataService.close();
+    monitorDataService = null;
+  }
   if (process.platform !== "darwin") {
     app.quit();
   }
