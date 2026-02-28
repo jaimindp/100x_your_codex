@@ -11,8 +11,8 @@ const graphDetailsEl = document.getElementById("graph-details");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
-const themeDarkBtn = document.getElementById("theme-dark-btn");
-const themeLightBtn = document.getElementById("theme-light-btn");
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
+const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
@@ -125,11 +125,10 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 loadLinearSettings();
 
 function initializeThemeControls() {
-  if (themeDarkBtn) {
-    themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
-  }
-  if (themeLightBtn) {
-    themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      setThemePreference(currentTheme === "dark" ? "light" : "dark");
+    });
   }
 
   loadThemeSettings();
@@ -174,16 +173,19 @@ function applyTheme(theme) {
   currentTheme = normalizedTheme;
   document.documentElement.setAttribute("data-theme", normalizedTheme);
 
-  if (themeDarkBtn) {
-    const isDark = normalizedTheme === "dark";
-    themeDarkBtn.classList.toggle("is-active", isDark);
-    themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+  if (themeToggleBtn) {
+    themeToggleBtn.setAttribute(
+      "aria-label",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute(
+      "title",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute("aria-pressed", String(normalizedTheme === "light"));
   }
-
-  if (themeLightBtn) {
-    const isLight = normalizedTheme === "light";
-    themeLightBtn.classList.toggle("is-active", isLight);
-    themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  if (themeToggleGlyph) {
+    themeToggleGlyph.textContent = normalizedTheme === "dark" ? "🌙" : "☀";
   }
 }
 

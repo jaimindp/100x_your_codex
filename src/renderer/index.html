@@ -28,6 +28,17 @@
           <button class="nav-btn" data-screen="build-snapshots" type="button">Build Snapshots</button>
           <button class="nav-btn" data-screen="server-manager" type="button">Server Manager</button>
         </nav>
+        <div class="sidebar-footer">
+          <button
+            id="theme-toggle-btn"
+            type="button"
+            class="theme-icon-btn"
+            aria-label="Toggle theme"
+            title="Toggle theme"
+          >
+            <span id="theme-toggle-glyph" aria-hidden="true">🌙</span>
+          </button>
+        </div>
       </aside>
 
       <div class="content-shell">
@@ -36,13 +47,7 @@
             <h2 id="screen-title">Overview</h2>
             <p id="screen-subtitle">Shared app shell and cross-screen navigation.</p>
           </div>
-          <div class="topbar-actions">
-            <div class="theme-toggle" role="group" aria-label="Theme mode">
-              <button id="theme-dark-btn" type="button" class="theme-btn">Dark</button>
-              <button id="theme-light-btn" type="button" class="theme-btn">Light</button>
-            </div>
-            <p class="last-refresh">Last refresh: <span id="last-refresh-value">never</span></p>
-          </div>
+          <p class="last-refresh">Last refresh: <span id="last-refresh-value">never</span></p>
         </header>
 
         <main class="screen-panel is-active" data-screen-panel="overview">
