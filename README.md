@@ -44,6 +44,7 @@ CODEX_BIN=/absolute/path/to/codex npm run start
     - `Linear API Key` (personal API key)
     - `Team Key` (example: `ENG`)
 - Nodes are clickable and show issue details in the right panel.
+- The first successful `Load Linear Issues` saves `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` in a local `.env` file at the repo root, and these fields are auto-filled on next launch.
 
 Notes:
 - Mermaid is loaded from CDN (`jsdelivr`) at runtime.
