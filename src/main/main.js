@@ -373,43 +373,59 @@ function topCounterEntries(counter) {
     .map(([name, count]) => ({ name, count }));
 }
 
-function walkForMcpTools(value, foundTools, depth = 0) {
-  if (depth > 12 || value == null) {
-    return;
+function tryParseJson(value) {
+  if (value && typeof value === "object") {
+    return value;
   }
-
-  if (typeof value === "string") {
-    const matches = value.match(/\bmcp__[a-z0-9_]+(?:__[a-z0-9_]+)?\b/gi);
-    if (matches) {
-      matches.forEach((match) => {
-        foundTools.add(match.toLowerCase());
-      });
-    }
-    return;
+  if (typeof value !== "string") {
+    return null;
   }
-
-  if (Array.isArray(value)) {
-    value.forEach((item) => walkForMcpTools(item, foundTools, depth + 1));
-    return;
-  }
-
-  if (typeof value === "object") {
-    Object.entries(value).forEach(([key, childValue]) => {
-      walkForMcpTools(key, foundTools, depth + 1);
-      walkForMcpTools(childValue, foundTools, depth + 1);
-    });
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
 }
 
-function findMentionedSkills(sourceText) {
-  const lower = String(sourceText || "").toLowerCase();
-  const mentions = [];
+function extractSkillsFromCommand(commandText) {
+  const command = String(commandText || "");
+  if (!command) {
+    return [];
+  }
+
+  const found = new Set();
   SKILL_NAMES.forEach((skillName) => {
-    if (lower.includes(skillName.toLowerCase())) {
-      mentions.push(skillName);
+    const marker = `${skillName}/SKILL.md`;
+    if (command.includes(marker)) {
+      found.add(skillName);
     }
   });
-  return mentions;
+  return Array.from(found);
+}
+
+function extractSkillInvocationsFromFunctionCall(payload) {
+  const functionName = String(payload?.name || "");
+  if (!functionName) {
+    return [];
+  }
+
+  const parsedArgs = tryParseJson(payload?.arguments);
+  const found = new Set();
+
+  if (functionName === "exec_command") {
+    const cmd = String(parsedArgs?.cmd || "");
+    extractSkillsFromCommand(cmd).forEach((skillName) => found.add(skillName));
+  }
+
+  if (functionName === "multi_tool_use.parallel") {
+    const toolUses = Array.isArray(parsedArgs?.tool_uses) ? parsedArgs.tool_uses : [];
+    toolUses.forEach((toolUse) => {
+      const cmd = String(toolUse?.parameters?.cmd || "");
+      extractSkillsFromCommand(cmd).forEach((skillName) => found.add(skillName));
+    });
+  }
+
+  return Array.from(found);
 }
 
 async function getMcpSkillTrackingSnapshot(rawDays) {
@@ -474,15 +490,18 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
         continue;
       }
 
-      const foundTools = new Set();
-      walkForMcpTools(parsed, foundTools);
-      foundTools.forEach((toolName) => {
-        bumpCounter(mcpCounter, toolName);
-        snapshot.mcpToolCallsTotal += 1;
-      });
+      if (parsed.type !== "response_item" || parsed.payload?.type !== "function_call") {
+        continue;
+      }
 
-      const mentionedSkills = findMentionedSkills(trimmed);
-      mentionedSkills.forEach((skillName) => {
+      const functionName = String(parsed.payload?.name || "").toLowerCase();
+      if (functionName.startsWith("mcp__")) {
+        bumpCounter(mcpCounter, functionName);
+        snapshot.mcpToolCallsTotal += 1;
+      }
+
+      const invokedSkills = extractSkillInvocationsFromFunctionCall(parsed.payload);
+      invokedSkills.forEach((skillName) => {
         bumpCounter(skillCounter, skillName);
         snapshot.skillMentionsTotal += 1;
       });

@@ -830,7 +830,7 @@ function renderMcpSnapshot(snapshot) {
     { label: "Files scanned", value: snapshot.filesScanned },
     { label: "Lines scanned", value: snapshot.linesScanned },
     { label: "MCP tool calls", value: snapshot.mcpToolCallsTotal },
-    { label: "Skill mentions", value: snapshot.skillMentionsTotal },
+    { label: "Skill invocations", value: snapshot.skillMentionsTotal },
     { label: "Parse errors", value: snapshot.parseErrors }
   ]);
 
