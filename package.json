@@ -1,0 +1,19 @@
+{
+  "name": "monitor-electron-app",
+  "version": "0.1.0",
+  "description": "Electron app scaffold for Monitor",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron ."
+  },
+  "keywords": [
+    "electron",
+    "desktop"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^40.6.1"
+  }
+}
