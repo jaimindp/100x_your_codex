@@ -327,11 +327,19 @@ input {
   margin-top: 14px;
   display: grid;
   gap: 12px;
-  grid-template-columns: 2fr 1fr;
+  grid-template-columns: minmax(0, 1.75fr) minmax(320px, 1fr);
 }
 
 .graph-shell h3 {
   margin: 0 0 8px;
+}
+
+.graph-shell > section {
+  min-width: 0;
+}
+
+.graph-shell > section:last-child {
+  min-width: 320px;
 }
 
 .graph-toolbar {
@@ -359,6 +367,7 @@ input {
 .graph-output {
   min-height: 420px;
   max-height: 62vh;
+  max-width: 100%;
   overflow: auto;
   border: 1px dashed #2f435c;
   border-radius: 12px;
@@ -431,6 +440,10 @@ input {
 
   .graph-shell {
     grid-template-columns: 1fr;
+  }
+
+  .graph-shell > section:last-child {
+    min-width: 0;
   }
 
   .topbar {

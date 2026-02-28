@@ -54,6 +54,7 @@ graph TD
   H36["hack-36: codex-model-and-cost-usage-tracking"]
   H37["hack-37: git-file-research-tracking"]
   H38["hack-38: agent-orchestrated-end-to-end-ticket-flow"]
+  H39["hack-39: automated-repo-intake-and-planning"]
 
   H10 --> H11
   H10 --> H12
@@ -94,6 +95,10 @@ graph TD
   H27 --> H28
   H23 --> H29
   H28 --> H29
+  H38 --> H39
+  H20 --> H39
+  H15 --> H39
+  H39 --> H17
 
   class H10 inprog;
   class H13 inprog;
@@ -103,7 +108,7 @@ graph TD
   class H35 inprog;
   class H38 done;
   class H37 todo;
-  class H11,H12,H15,H16,H17,H18,H19,H20,H21,H22,H23,H24,H26,H27,H28,H29,H30,H31,H32,H33,H36 blocked;
+  class H11,H12,H15,H16,H17,H18,H19,H20,H21,H22,H23,H24,H26,H27,H28,H29,H30,H31,H32,H33,H36,H39 blocked;
 
   classDef todo fill:#e2e3e5,stroke:#6c757d,color:#343a40;
   classDef inprog fill:#fff3cd,stroke:#b58900,color:#664d03;

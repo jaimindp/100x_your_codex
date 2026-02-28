@@ -57,25 +57,8 @@
 
         <main class="screen-panel" data-screen-panel="build-chart">
           <div class="card">
-            <h3>Dependency Map</h3>
-            <p>Interactive task DAG with dependency-first navigation.</p>
-            <p id="dep-map-status">Dependency map status: rendering...</p>
-            <div class="graph-toolbar">
-              <div class="row graph-zoom-controls">
-                <button id="dep-map-zoom-out" type="button" aria-label="Zoom out dependency map">-</button>
-                <button id="dep-map-zoom-reset" type="button" aria-label="Reset dependency map zoom">100%</button>
-                <button id="dep-map-zoom-in" type="button" aria-label="Zoom in dependency map">+</button>
-              </div>
-              <span id="dep-map-nav-hint" class="graph-nav-hint" aria-live="polite"
-                >Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.</span
-              >
-            </div>
-            <div id="dep-map-output" class="graph-output"></div>
-          </div>
-
-          <div class="card">
-            <h3>Linear Issue Graph</h3>
-            <p>Interactive Mermaid DAG for Linear issues inside this Electron app.</p>
+            <h3>Build Graph</h3>
+            <p>Unified dependency and Linear relationship graph view.</p>
             <details id="graph-controls-panel" class="graph-controls-panel" open>
               <summary>Connection Settings</summary>
               <div class="graph-controls">
@@ -84,6 +67,7 @@
                 <label for="linear-team-key">Team Key</label>
                 <input id="linear-team-key" type="text" placeholder="ENG" />
                 <div class="row">
+                  <button id="graph-load-dependency-map" type="button">Show Dependency Map</button>
                   <button id="linear-save-settings" type="button">Save Settings</button>
                   <button id="graph-load-linear" type="button">Load Linear Issues</button>
                   <button id="graph-load-mock" type="button">Load Mock Data</button>

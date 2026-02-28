@@ -3,21 +3,16 @@ const linearTeamKeyInput = document.getElementById("linear-team-key");
 const linearSaveSettingsBtn = document.getElementById("linear-save-settings");
 const graphLoadLinearBtn = document.getElementById("graph-load-linear");
 const graphLoadMockBtn = document.getElementById("graph-load-mock");
+const graphLoadDependencyMapBtn = document.getElementById("graph-load-dependency-map");
 const graphControlsPanel = document.getElementById("graph-controls-panel");
 const graphStatusEl = document.getElementById("graph-status");
 const settingsStatusEl = document.getElementById("settings-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
-const depMapStatusEl = document.getElementById("dep-map-status");
-const depMapOutputEl = document.getElementById("dep-map-output");
 const graphZoomInBtn = document.getElementById("graph-zoom-in");
 const graphZoomOutBtn = document.getElementById("graph-zoom-out");
 const graphZoomResetBtn = document.getElementById("graph-zoom-reset");
 const graphNavHintEl = document.getElementById("graph-nav-hint");
-const depMapZoomInBtn = document.getElementById("dep-map-zoom-in");
-const depMapZoomOutBtn = document.getElementById("dep-map-zoom-out");
-const depMapZoomResetBtn = document.getElementById("dep-map-zoom-reset");
-const depMapNavHintEl = document.getElementById("dep-map-nav-hint");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
@@ -39,25 +34,14 @@ let graphPanState = {
   startScrollLeft: 0,
   startScrollTop: 0
 };
-let depMapZoomLevel = 1;
-let depMapDefaultZoomLevel = 1;
-let depMapBaseSize = { width: 0, height: 0 };
-let depMapPanState = {
-  active: false,
-  pointerId: null,
-  startX: 0,
-  startY: 0,
-  startScrollLeft: 0,
-  startScrollTop: 0
-};
 let currentScreenId = "overview";
 let currentTheme = "dark";
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
-const GRAPH_ZOOM_MIN = 0.4;
+const GRAPH_ZOOM_MIN = 0.2;
 const GRAPH_ZOOM_MAX = 2.2;
 const GRAPH_ZOOM_STEP = 0.15;
-const GRAPH_LABEL_WRAP_CHARS = 26;
+const GRAPH_LABEL_WRAP_CHARS = 20;
 const GRAPH_LABEL_MAX_LINES = 3;
 const DEP_MAP_LABEL_MAX_LINES = 2;
 const DEPENDENCY_TASKS = [
@@ -171,10 +155,10 @@ if (window.mermaid) {
     securityLevel: "loose",
     theme: "neutral",
     flowchart: {
-      curve: "linear",
+      curve: "basis",
       defaultRenderer: "dagre",
-      nodeSpacing: 18,
-      rankSpacing: 56
+      nodeSpacing: 14,
+      rankSpacing: 48
     }
   });
 }
@@ -190,8 +174,14 @@ window.onGraphNodeClick = (nodeId) => {
 initializeNavigation();
 initializeThemeControls();
 initializeGraphNavigationControls();
-initializeDependencyMapNavigationControls();
 renderDependencyMapGraph();
+
+if (graphLoadDependencyMapBtn) {
+  graphLoadDependencyMapBtn.addEventListener("click", async () => {
+    await renderDependencyMapGraph();
+    updateLastRefresh("Build Chart (dependency map)");
+  });
+}
 
 if (graphLoadMockBtn) {
   graphLoadMockBtn.addEventListener("click", async () => {
@@ -328,12 +318,6 @@ function setSettingsStatus(message) {
   }
 }
 
-function setDepMapStatus(message) {
-  if (depMapStatusEl) {
-    depMapStatusEl.textContent = message;
-  }
-}
-
 function updateLastRefresh(sourceName) {
   if (!lastRefreshValueEl) {
     return;
@@ -344,26 +328,31 @@ function updateLastRefresh(sourceName) {
 }
 
 async function renderDependencyMapGraph() {
-  if (!window.mermaid || !depMapOutputEl) {
-    setDepMapStatus("Dependency map status: Mermaid is not loaded");
+  if (!window.mermaid || !graphOutputEl) {
+    setGraphStatus("Graph status: Mermaid is not loaded");
     return;
   }
 
-  setDepMapStatus("Dependency map status: rendering...");
+  setGraphStatus("Graph status: rendering dependency map...");
   try {
     const graphText = buildDependencyMapMermaid();
     const renderId = `dependency-map-${Date.now()}`;
     const rendered = await window.mermaid.render(renderId, graphText);
-    depMapOutputEl.innerHTML = rendered.svg;
+    graphIssuesByNodeId = new Map();
+    graphOutputEl.innerHTML = rendered.svg;
     if (typeof rendered.bindFunctions === "function") {
-      rendered.bindFunctions(depMapOutputEl);
+      rendered.bindFunctions(graphOutputEl);
     }
-    initializeDepMapZoomForRenderedSvg();
-    setDepMapStatus(
-      `Dependency map status: rendered ${DEPENDENCY_TASKS.length} tasks and ${DEPENDENCY_EDGES.length} dependencies`
+    initializeGraphZoomForRenderedSvg();
+    if (graphDetailsEl) {
+      graphDetailsEl.textContent =
+        "Dependency map view loaded. Load Linear Issues to inspect issue details on node click.";
+    }
+    setGraphStatus(
+      `Graph status: rendered dependency map (${DEPENDENCY_TASKS.length} tasks, ${DEPENDENCY_EDGES.length} dependencies)`
     );
   } catch (error) {
-    setDepMapStatus(`Dependency map status: ${errorMessage(error)}`);
+    setGraphStatus(`Graph status: ${errorMessage(error)}`);
   }
 }
 
@@ -1232,180 +1221,4 @@ function onGraphWheel(event) {
   const anchorY = event.clientY - rect.top;
   const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
   setGraphZoom(graphZoomLevel * scaleDirection, { anchorX, anchorY });
-}
-
-function initializeDependencyMapNavigationControls() {
-  updateDepMapZoomControls();
-
-  if (depMapZoomInBtn) {
-    depMapZoomInBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel + GRAPH_ZOOM_STEP));
-  }
-  if (depMapZoomOutBtn) {
-    depMapZoomOutBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel - GRAPH_ZOOM_STEP));
-  }
-  if (depMapZoomResetBtn) {
-    depMapZoomResetBtn.addEventListener("click", () => setDepMapZoom(depMapDefaultZoomLevel));
-  }
-
-  if (!depMapOutputEl) {
-    return;
-  }
-
-  depMapOutputEl.addEventListener("pointerdown", onDepMapPointerDown);
-  depMapOutputEl.addEventListener("pointermove", onDepMapPointerMove);
-  depMapOutputEl.addEventListener("pointerup", onDepMapPointerUp);
-  depMapOutputEl.addEventListener("pointercancel", stopDepMapPanning);
-  depMapOutputEl.addEventListener("lostpointercapture", stopDepMapPanning);
-  depMapOutputEl.addEventListener("wheel", onDepMapWheel, { passive: false });
-}
-
-function initializeDepMapZoomForRenderedSvg() {
-  const svg = getDepMapSvg();
-  if (!svg || !depMapOutputEl) {
-    depMapBaseSize = { width: 0, height: 0 };
-    depMapZoomLevel = 1;
-    depMapDefaultZoomLevel = 1;
-    updateDepMapZoomControls();
-    return;
-  }
-
-  const baseSize = computeGraphBaseSize(svg);
-  depMapBaseSize = baseSize;
-  depMapDefaultZoomLevel = computeGraphFitZoom(baseSize, depMapOutputEl);
-  depMapZoomLevel = depMapDefaultZoomLevel;
-  applyDepMapZoom();
-  depMapOutputEl.scrollTop = 0;
-  depMapOutputEl.scrollLeft = 0;
-}
-
-function getDepMapSvg() {
-  if (!depMapOutputEl) {
-    return null;
-  }
-  return depMapOutputEl.querySelector("svg");
-}
-
-function applyDepMapZoom() {
-  const svg = getDepMapSvg();
-  if (!svg || !depMapBaseSize.width || !depMapBaseSize.height) {
-    updateDepMapZoomControls();
-    return;
-  }
-
-  svg.style.width = `${Math.round(depMapBaseSize.width * depMapZoomLevel)}px`;
-  svg.style.height = `${Math.round(depMapBaseSize.height * depMapZoomLevel)}px`;
-  updateDepMapZoomControls();
-}
-
-function setDepMapZoom(nextZoom, options = {}) {
-  if (!depMapOutputEl) {
-    return;
-  }
-
-  const clampedZoom = clampGraphZoom(nextZoom);
-  const previousZoom = depMapZoomLevel;
-  if (Math.abs(clampedZoom - previousZoom) < 0.001) {
-    updateDepMapZoomControls();
-    return;
-  }
-
-  const anchorX =
-    typeof options.anchorX === "number" ? options.anchorX : depMapOutputEl.clientWidth / 2;
-  const anchorY =
-    typeof options.anchorY === "number" ? options.anchorY : depMapOutputEl.clientHeight / 2;
-  const contentX = (depMapOutputEl.scrollLeft + anchorX) / previousZoom;
-  const contentY = (depMapOutputEl.scrollTop + anchorY) / previousZoom;
-
-  depMapZoomLevel = clampedZoom;
-  applyDepMapZoom();
-
-  depMapOutputEl.scrollLeft = Math.max(0, contentX * depMapZoomLevel - anchorX);
-  depMapOutputEl.scrollTop = Math.max(0, contentY * depMapZoomLevel - anchorY);
-}
-
-function updateDepMapZoomControls() {
-  const hasRenderedGraph = Boolean(getDepMapSvg());
-  const zoomPercent = `${Math.round(depMapZoomLevel * 100)}%`;
-
-  if (depMapZoomResetBtn) {
-    depMapZoomResetBtn.textContent = zoomPercent;
-    depMapZoomResetBtn.disabled = !hasRenderedGraph;
-  }
-  if (depMapZoomInBtn) {
-    depMapZoomInBtn.disabled = !hasRenderedGraph || depMapZoomLevel >= GRAPH_ZOOM_MAX;
-  }
-  if (depMapZoomOutBtn) {
-    depMapZoomOutBtn.disabled = !hasRenderedGraph || depMapZoomLevel <= GRAPH_ZOOM_MIN;
-  }
-  if (depMapNavHintEl) {
-    depMapNavHintEl.textContent = hasRenderedGraph
-      ? `Zoom ${zoomPercent}. Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.`
-      : "Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.";
-  }
-}
-
-function onDepMapPointerDown(event) {
-  if (!depMapOutputEl || event.button !== 0 || !getDepMapSvg()) {
-    return;
-  }
-  depMapPanState = {
-    active: true,
-    pointerId: event.pointerId,
-    startX: event.clientX,
-    startY: event.clientY,
-    startScrollLeft: depMapOutputEl.scrollLeft,
-    startScrollTop: depMapOutputEl.scrollTop
-  };
-  depMapOutputEl.classList.add("is-panning");
-  depMapOutputEl.setPointerCapture(event.pointerId);
-  event.preventDefault();
-}
-
-function onDepMapPointerMove(event) {
-  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
-    return;
-  }
-
-  const deltaX = event.clientX - depMapPanState.startX;
-  const deltaY = event.clientY - depMapPanState.startY;
-  depMapOutputEl.scrollLeft = depMapPanState.startScrollLeft - deltaX;
-  depMapOutputEl.scrollTop = depMapPanState.startScrollTop - deltaY;
-}
-
-function onDepMapPointerUp(event) {
-  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
-    return;
-  }
-  stopDepMapPanning();
-}
-
-function stopDepMapPanning() {
-  if (!depMapOutputEl || !depMapPanState.active) {
-    return;
-  }
-  if (
-    depMapPanState.pointerId !== null &&
-    depMapOutputEl.hasPointerCapture(depMapPanState.pointerId)
-  ) {
-    depMapOutputEl.releasePointerCapture(depMapPanState.pointerId);
-  }
-  depMapPanState.active = false;
-  depMapPanState.pointerId = null;
-  depMapOutputEl.classList.remove("is-panning");
-}
-
-function onDepMapWheel(event) {
-  if (!depMapOutputEl || !getDepMapSvg()) {
-    return;
-  }
-  if (!event.ctrlKey && !event.metaKey) {
-    return;
-  }
-
-  event.preventDefault();
-  const rect = depMapOutputEl.getBoundingClientRect();
-  const anchorX = event.clientX - rect.left;
-  const anchorY = event.clientY - rect.top;
-  const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
-  setDepMapZoom(depMapZoomLevel * scaleDirection, { anchorX, anchorY });
 }

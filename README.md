@@ -1,7 +1,7 @@
 # Monitor Electron App
 
 Electron monitor UI that can start/stop `codex app-server` and stream logs.
-It also includes an interactive Mermaid-based Linear issue DAG view.
+It includes a unified Mermaid-based Build Chart view for dependency map + Linear issue DAG data.
 
 ## App shell + shared navigation
 
@@ -11,11 +11,8 @@ It also includes an interactive Mermaid-based Linear issue DAG view.
   - Shared `Last refresh` status chip.
   - Dark/Light theme toggle with persisted preference.
 - Current screens in nav:
-  - Overview, Timeline, Live Sessions, Usage, Credits + Context, MCP + Skills,
-    Git + Worktrees, Dependency Map, Linear Graph, Health, Settings,
-    Build Snapshots, Server Manager.
-- `Linear Graph` is fully functional in this build; non-graph screens are scaffolded
-  placeholders to support progressive integration.
+  - Overview, Build Chart, Agents, Usage, MCP + Skills, Git + Worktrees, Health, Settings.
+- `Build Chart` is the functional graph screen; non-graph screens are scaffolded placeholders.
 
 ## Project structure
 
@@ -79,14 +76,15 @@ Runbook and templates:
 CODEX_BIN=/absolute/path/to/codex npm run start
 ```
 
-## Linear issue graph (inside Electron)
+## Build Chart (inside Electron)
 
-- In the `Linear Issue Graph` panel, you can use:
-  - `Load Mock Data` for a local graph preview.
+- In the `Build Chart` panel, you can use one shared graph area for both data sources:
+  - `Show Dependency Map` for local task DAG view.
+  - `Load Mock Data` for a local Linear graph preview.
   - `Load Linear Issues` with:
     - `Linear API Key` (personal API key)
     - `Team Key` (example: `ENG`)
-- Nodes are clickable and show issue details in the right panel.
+- Linear nodes are clickable and show issue details in the right panel.
 - Edges include both:
   - Parent -> sub-issue relationships.
   - Blocker relationships (blocking issue -> blocked issue).
