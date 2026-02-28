@@ -49,6 +49,7 @@ graph TD
   H31["hack-31: mcp-health"]
   H32["hack-32: linear-done-ticket-build-launch"]
   H33["hack-33: local-server-management"]
+  H34["hack-34: dependency-map-interactive-navigation"]
   H35["hack-35: remove-linear-issue-graph-intro-text"]
   H36["hack-36: codex-model-and-cost-usage-tracking"]
   H37["hack-37: git-file-research-tracking"]
@@ -97,6 +98,7 @@ graph TD
   class H10 inprog;
   class H13 inprog;
   class H14 inprog;
+  class H34 inprog;
   class H25 inprog;
   class H35,H38 inprog;
   class H37 todo;

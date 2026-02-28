@@ -8,40 +8,144 @@ const graphStatusEl = document.getElementById("graph-status");
 const settingsStatusEl = document.getElementById("settings-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
+const depMapStatusEl = document.getElementById("dep-map-status");
+const depMapOutputEl = document.getElementById("dep-map-output");
+const graphZoomInBtn = document.getElementById("graph-zoom-in");
+const graphZoomOutBtn = document.getElementById("graph-zoom-out");
+const graphZoomResetBtn = document.getElementById("graph-zoom-reset");
+const graphNavHintEl = document.getElementById("graph-nav-hint");
+const depMapZoomInBtn = document.getElementById("dep-map-zoom-in");
+const depMapZoomOutBtn = document.getElementById("dep-map-zoom-out");
+const depMapZoomResetBtn = document.getElementById("dep-map-zoom-reset");
+const depMapNavHintEl = document.getElementById("dep-map-nav-hint");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
-const themeDarkBtn = document.getElementById("theme-dark-btn");
-const themeLightBtn = document.getElementById("theme-light-btn");
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
+const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
 let graphIssuesByNodeId = new Map();
 let isGraphLoadInFlight = false;
+let graphZoomLevel = 1;
+let graphDefaultZoomLevel = 1;
+let graphBaseSize = { width: 0, height: 0 };
+let graphPanState = {
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0
+};
+let depMapZoomLevel = 1;
+let depMapDefaultZoomLevel = 1;
+let depMapBaseSize = { width: 0, height: 0 };
+let depMapPanState = {
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0
+};
 let currentScreenId = "overview";
 let currentTheme = "dark";
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
+const GRAPH_ZOOM_MIN = 0.4;
+const GRAPH_ZOOM_MAX = 2.2;
+const GRAPH_ZOOM_STEP = 0.15;
+const GRAPH_LABEL_WRAP_CHARS = 26;
+const GRAPH_LABEL_MAX_LINES = 3;
+const DEP_MAP_LABEL_MAX_LINES = 2;
+const DEPENDENCY_TASKS = [
+  { id: "H10", key: "hack-10", title: "app-db-and-ingestion-core", status: "inprog" },
+  { id: "H11", key: "hack-11", title: "usage-cost-dashboard", status: "blocked" },
+  { id: "H12", key: "hack-12", title: "timeline-git-health", status: "blocked" },
+  { id: "H13", key: "hack-13", title: "linear-env-persistence", status: "inprog" },
+  { id: "H14", key: "hack-14", title: "electron-cleanup", status: "inprog" },
+  { id: "H15", key: "hack-15", title: "linear-relation-graph", status: "blocked" },
+  { id: "H16", key: "hack-16", title: "graph-filters-and-export", status: "blocked" },
+  { id: "H17", key: "hack-17", title: "demo-polish-and-packaging", status: "blocked" },
+  { id: "H18", key: "hack-18", title: "mcp-and-skill-tracking", status: "blocked" },
+  { id: "H19", key: "hack-19", title: "live-sessions-and-credit-context", status: "blocked" },
+  { id: "H20", key: "hack-20", title: "worktree-and-dependency-map-tracking", status: "blocked" },
+  { id: "H21", key: "hack-21", title: "cross-view-correlation-and-polish", status: "blocked" },
+  { id: "H22", key: "hack-22", title: "video-creation", status: "blocked" },
+  { id: "H23", key: "hack-23", title: "demo-link-setup", status: "blocked" },
+  { id: "H24", key: "hack-24", title: "linear-graph-reliability-and-security", status: "blocked" },
+  { id: "H25", key: "hack-25", title: "app-shell-integration-and-shared-nav", status: "inprog" },
+  { id: "H26", key: "hack-26", title: "functional-test-pass", status: "blocked" },
+  { id: "H27", key: "hack-27", title: "regression-test-pass", status: "blocked" },
+  { id: "H28", key: "hack-28", title: "performance-target-validation", status: "blocked" },
+  { id: "H29", key: "hack-29", title: "submission-docs-and-packaging", status: "blocked" },
+  { id: "H30", key: "hack-30", title: "worktree-commit-timelines", status: "blocked" },
+  { id: "H31", key: "hack-31", title: "mcp-health", status: "blocked" },
+  { id: "H32", key: "hack-32", title: "linear-done-ticket-build-launch", status: "blocked" },
+  { id: "H33", key: "hack-33", title: "local-server-management", status: "blocked" },
+  { id: "H34", key: "hack-34", title: "dependency-map-interactive-navigation", status: "inprog" },
+  { id: "H35", key: "hack-35", title: "remove-linear-issue-graph-intro-text", status: "inprog" },
+  { id: "H36", key: "hack-36", title: "codex-model-and-cost-usage-tracking", status: "blocked" }
+];
+const DEPENDENCY_EDGES = [
+  ["H10", "H11"],
+  ["H10", "H12"],
+  ["H10", "H15"],
+  ["H10", "H18"],
+  ["H10", "H19"],
+  ["H10", "H20"],
+  ["H13", "H15"],
+  ["H14", "H12"],
+  ["H15", "H16"],
+  ["H16", "H24"],
+  ["H18", "H21"],
+  ["H19", "H21"],
+  ["H20", "H21"],
+  ["H16", "H21"],
+  ["H12", "H30"],
+  ["H20", "H30"],
+  ["H18", "H31"],
+  ["H23", "H32"],
+  ["H20", "H32"],
+  ["H10", "H33"],
+  ["H10", "H36"],
+  ["H14", "H33"],
+  ["H30", "H17"],
+  ["H31", "H17"],
+  ["H32", "H17"],
+  ["H33", "H17"],
+  ["H36", "H17"],
+  ["H24", "H25"],
+  ["H21", "H25"],
+  ["H11", "H17"],
+  ["H12", "H17"],
+  ["H25", "H17"],
+  ["H17", "H22"],
+  ["H22", "H23"],
+  ["H17", "H26"],
+  ["H26", "H27"],
+  ["H27", "H28"],
+  ["H23", "H29"],
+  ["H28", "H29"]
+];
 const SCREEN_META = {
   overview: {
     title: "Overview",
     subtitle: "Shared app shell and cross-screen navigation."
   },
-  timeline: {
-    title: "Timeline",
-    subtitle: "Session and event history."
+  "build-chart": {
+    title: "Build Chart",
+    subtitle: "Parent/sub-issue and blocker relationships."
   },
-  "live-sessions": {
-    title: "Live Sessions",
-    subtitle: "Active sessions and status."
+  agents: {
+    title: "Agents",
+    subtitle: "Active agent sessions and status."
   },
   usage: {
     title: "Usage",
-    subtitle: "Usage and cost visibility."
-  },
-  "credits-context": {
-    title: "Credits + Context",
-    subtitle: "Rate limits and context pressure."
+    subtitle: "Usage, timeline, and credits/context visibility."
   },
   "mcp-skills": {
     title: "MCP + Skills",
@@ -51,14 +155,6 @@ const SCREEN_META = {
     title: "Git + Worktrees",
     subtitle: "Branch/worktree health."
   },
-  "dependency-map": {
-    title: "Dependency Map",
-    subtitle: "Task DAG and delivery status."
-  },
-  "linear-graph": {
-    title: "Linear Graph",
-    subtitle: "Parent/sub-issue and blocker relationships."
-  },
   health: {
     title: "Health",
     subtitle: "Operational reliability signals."
@@ -66,14 +162,6 @@ const SCREEN_META = {
   settings: {
     title: "Settings",
     subtitle: "Runtime configuration."
-  },
-  "build-snapshots": {
-    title: "Build Snapshots",
-    subtitle: "Local build snapshot launch points."
-  },
-  "server-manager": {
-    title: "Server Manager",
-    subtitle: "Managed local server controls."
   }
 };
 
@@ -83,8 +171,10 @@ if (window.mermaid) {
     securityLevel: "loose",
     theme: "neutral",
     flowchart: {
-      curve: "basis",
-      defaultRenderer: "elk"
+      curve: "linear",
+      defaultRenderer: "dagre",
+      nodeSpacing: 18,
+      rankSpacing: 56
     }
   });
 }
@@ -99,6 +189,9 @@ window.onGraphNodeClick = (nodeId) => {
 
 initializeNavigation();
 initializeThemeControls();
+initializeGraphNavigationControls();
+initializeDependencyMapNavigationControls();
+renderDependencyMapGraph();
 
 if (graphLoadMockBtn) {
   graphLoadMockBtn.addEventListener("click", async () => {
@@ -107,7 +200,7 @@ if (graphLoadMockBtn) {
       const issues = getMockIssues();
       await renderIssueGraph(issues);
       setGraphStatus(`Graph status: rendered ${issues.length} mock issues`);
-      updateLastRefresh("Linear Graph (mock)");
+      updateLastRefresh("Build Chart (mock)");
     } catch (error) {
       setGraphStatus(`Graph status: ${errorMessage(error)}`);
     }
@@ -125,11 +218,10 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 loadLinearSettings();
 
 function initializeThemeControls() {
-  if (themeDarkBtn) {
-    themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
-  }
-  if (themeLightBtn) {
-    themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      setThemePreference(currentTheme === "dark" ? "light" : "dark");
+    });
   }
 
   loadThemeSettings();
@@ -174,16 +266,19 @@ function applyTheme(theme) {
   currentTheme = normalizedTheme;
   document.documentElement.setAttribute("data-theme", normalizedTheme);
 
-  if (themeDarkBtn) {
-    const isDark = normalizedTheme === "dark";
-    themeDarkBtn.classList.toggle("is-active", isDark);
-    themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+  if (themeToggleBtn) {
+    themeToggleBtn.setAttribute(
+      "aria-label",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute(
+      "title",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute("aria-pressed", String(normalizedTheme === "light"));
   }
-
-  if (themeLightBtn) {
-    const isLight = normalizedTheme === "light";
-    themeLightBtn.classList.toggle("is-active", isLight);
-    themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  if (themeToggleGlyph) {
+    themeToggleGlyph.textContent = normalizedTheme === "dark" ? "🌙" : "☀";
   }
 }
 
@@ -233,6 +328,12 @@ function setSettingsStatus(message) {
   }
 }
 
+function setDepMapStatus(message) {
+  if (depMapStatusEl) {
+    depMapStatusEl.textContent = message;
+  }
+}
+
 function updateLastRefresh(sourceName) {
   if (!lastRefreshValueEl) {
     return;
@@ -240,6 +341,49 @@ function updateLastRefresh(sourceName) {
 
   const now = new Date();
   lastRefreshValueEl.textContent = `${now.toLocaleTimeString()} (${sourceName})`;
+}
+
+async function renderDependencyMapGraph() {
+  if (!window.mermaid || !depMapOutputEl) {
+    setDepMapStatus("Dependency map status: Mermaid is not loaded");
+    return;
+  }
+
+  setDepMapStatus("Dependency map status: rendering...");
+  try {
+    const graphText = buildDependencyMapMermaid();
+    const renderId = `dependency-map-${Date.now()}`;
+    const rendered = await window.mermaid.render(renderId, graphText);
+    depMapOutputEl.innerHTML = rendered.svg;
+    if (typeof rendered.bindFunctions === "function") {
+      rendered.bindFunctions(depMapOutputEl);
+    }
+    initializeDepMapZoomForRenderedSvg();
+    setDepMapStatus(
+      `Dependency map status: rendered ${DEPENDENCY_TASKS.length} tasks and ${DEPENDENCY_EDGES.length} dependencies`
+    );
+  } catch (error) {
+    setDepMapStatus(`Dependency map status: ${errorMessage(error)}`);
+  }
+}
+
+function buildDependencyMapMermaid() {
+  const lines = ["flowchart TB"];
+
+  DEPENDENCY_TASKS.forEach((task) => {
+    const wrappedTitle = wrapLabelText(task.title, GRAPH_LABEL_WRAP_CHARS, DEP_MAP_LABEL_MAX_LINES);
+    lines.push(`${task.id}["${sanitizeLabel(`${task.key}<br/>${wrappedTitle}`)}"]:::${task.status}`);
+  });
+
+  DEPENDENCY_EDGES.forEach(([source, target]) => {
+    lines.push(`${source} --> ${target}`);
+  });
+
+  lines.push("classDef todo fill:#e2e3e5,stroke:#6c757d,color:#343a40");
+  lines.push("classDef inprog fill:#fff3cd,stroke:#b58900,color:#664d03");
+  lines.push("classDef done fill:#d7f7e3,stroke:#1e8e3e,color:#0f5132");
+  lines.push("classDef blocked fill:#f8d7da,stroke:#b02a37,color:#58151c");
+  return lines.join("\n");
 }
 
 async function loadLinearSettings() {
@@ -368,8 +512,8 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
     const issues = await getTeamIssues(apiKey, team.id);
     await renderIssueGraph(issues);
     setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
+    updateLastRefresh("Build Chart");
     setSettingsStatus(`Settings status: saved and loaded ${issues.length} issues from ${team.key}`);
-    updateLastRefresh("Linear Graph");
     collapseGraphSettingsIfConfigured(apiKey, teamKey);
   } catch (error) {
     const message = errorMessage(error);
@@ -405,21 +549,30 @@ async function renderIssueGraph(issues) {
   if (typeof rendered.bindFunctions === "function") {
     rendered.bindFunctions(graphOutputEl);
   }
+  initializeGraphZoomForRenderedSvg();
   if (graphDetailsEl) {
     graphDetailsEl.textContent = "Click a node to inspect an issue.";
   }
 }
 
 function buildMermaidFlowchart(issues) {
-  const lines = ["flowchart LR"];
+  const lines = ["flowchart TB"];
   const issueMap = new Map();
   const drawnEdges = new Set();
+  const nodeStyles = [];
 
   issues.forEach((issue, index) => {
     const nodeId = `I${index + 1}`;
-    const className = issue.state?.type === "completed" ? "done" : "active";
+    const isDone = issue.state?.type === "completed";
+    const className = isDone ? "done" : "active";
+    const stateColor = normalizeLinearColor(issue.state?.color);
+    const styleString = isDone ? buildDoneNodeStyle() : buildNodeStyle(stateColor);
+    const nodeLabel = formatIssueNodeLabel(issue);
     issueMap.set(nodeId, issue);
-    lines.push(`${nodeId}["${sanitizeLabel(`${issue.identifier}: ${issue.title}`)}"]:::${className}`);
+    lines.push(`${nodeId}["${sanitizeLabel(nodeLabel)}"]:::${className}`);
+    if (styleString) {
+      nodeStyles.push({ nodeId, styleString });
+    }
     lines.push(`click ${nodeId} onGraphNodeClick "Open issue details"`);
   });
 
@@ -474,8 +627,12 @@ function buildMermaidFlowchart(issues) {
     });
   });
 
+  nodeStyles.forEach(({ nodeId, styleString }) => {
+    lines.push(`style ${nodeId} ${styleString}`);
+  });
+
   lines.push("classDef active fill:#dce8ff,stroke:#3973d8,color:#10264f");
-  lines.push("classDef done fill:#daf6df,stroke:#2d8a42,color:#12331d");
+  lines.push("classDef done fill:#d7f7e3,stroke:#1e8e3e,color:#0f5132");
 
   return {
     text: lines.join("\n"),
@@ -537,6 +694,132 @@ function sanitizeLabel(value) {
   return String(value).replace(/"/g, "'").replace(/\n/g, " ");
 }
 
+function normalizeLinearColor(colorValue) {
+  const raw = String(colorValue || "").trim();
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw.startsWith("#") ? raw : `#${raw}`;
+  if (!/^#[0-9a-fA-F]{6}$/.test(normalized)) {
+    return null;
+  }
+  return normalized.toLowerCase();
+}
+
+function buildNodeStyle(stateColor) {
+  if (!stateColor) {
+    return "";
+  }
+  const fill = stateColor;
+  const stroke = darkenHexColor(stateColor, 0.32);
+  const text = getReadableTextColor(stateColor);
+  return `fill:${fill},stroke:${stroke},color:${text}`;
+}
+
+function buildDoneNodeStyle() {
+  return "fill:#d7f7e3,stroke:#1e8e3e,color:#0f5132";
+}
+
+function darkenHexColor(hexColor, amount) {
+  const red = parseInt(hexColor.slice(1, 3), 16);
+  const green = parseInt(hexColor.slice(3, 5), 16);
+  const blue = parseInt(hexColor.slice(5, 7), 16);
+
+  const adjust = (channel) => {
+    const next = Math.round(channel * (1 - amount));
+    return Math.max(0, Math.min(255, next));
+  };
+
+  return `#${toHex(adjust(red))}${toHex(adjust(green))}${toHex(adjust(blue))}`;
+}
+
+function toHex(value) {
+  return value.toString(16).padStart(2, "0");
+}
+
+function getReadableTextColor(hexColor) {
+  const red = parseInt(hexColor.slice(1, 3), 16) / 255;
+  const green = parseInt(hexColor.slice(3, 5), 16) / 255;
+  const blue = parseInt(hexColor.slice(5, 7), 16) / 255;
+  const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  return luminance > 0.62 ? "#0f172a" : "#f8fafc";
+}
+
+function formatIssueNodeLabel(issue) {
+  const identifier = String(issue?.identifier || "ISSUE").trim();
+  const title = String(issue?.title || "Untitled").trim();
+  const wrappedTitle = wrapLabelText(title, GRAPH_LABEL_WRAP_CHARS, GRAPH_LABEL_MAX_LINES);
+  return `${identifier}<br/>${wrappedTitle}`;
+}
+
+function wrapLabelText(inputText, maxCharsPerLine, maxLines) {
+  const words = String(inputText || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  if (!words.length) {
+    return "Untitled";
+  }
+
+  const lines = [];
+  let currentLine = "";
+  const pushLine = (line) => {
+    if (line) {
+      lines.push(line);
+    }
+  };
+
+  for (const word of words) {
+    if (lines.length >= maxLines) {
+      break;
+    }
+
+    if (word.length > maxCharsPerLine) {
+      if (currentLine) {
+        pushLine(currentLine);
+        currentLine = "";
+      }
+      let index = 0;
+      while (index < word.length && lines.length < maxLines) {
+        const chunk = word.slice(index, index + maxCharsPerLine);
+        const isTail = index + maxCharsPerLine >= word.length;
+        if (!isTail && lines.length + 1 === maxLines) {
+          lines.push(`${chunk.slice(0, Math.max(1, maxCharsPerLine - 1))}…`);
+          index = word.length;
+          break;
+        }
+        lines.push(chunk);
+        index += maxCharsPerLine;
+      }
+      continue;
+    }
+
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      currentLine = candidate;
+      continue;
+    }
+
+    pushLine(currentLine);
+    currentLine = word;
+  }
+
+  if (lines.length < maxLines) {
+    pushLine(currentLine);
+  }
+
+  const didTruncate = lines.length >= maxLines && words.join(" ").length > lines.join(" ").length;
+  if (didTruncate) {
+    const lastIndex = lines.length - 1;
+    if (lastIndex >= 0 && !lines[lastIndex].endsWith("…")) {
+      lines[lastIndex] = `${lines[lastIndex].slice(0, Math.max(1, maxCharsPerLine - 1))}…`;
+    }
+  }
+
+  return lines.slice(0, maxLines).join("<br/>");
+}
+
 function escapeHtml(value) {
   return String(value)
     .replaceAll("&", "&amp;")
@@ -594,6 +877,7 @@ async function getTeamIssues(apiKey, teamId) {
               state {
                 name
                 type
+                color
               }
               parent {
                 id
@@ -674,7 +958,7 @@ function getMockIssues() {
       priority: 2,
       updatedAt: now,
       assignee: { name: "Owner" },
-      state: { name: "In Progress", type: "started" },
+      state: { name: "In Progress", type: "started", color: "#f2c94c" },
       parent: null,
       relations: { nodes: [] },
       inverseRelations: { nodes: [] }
@@ -687,7 +971,7 @@ function getMockIssues() {
       priority: 2,
       updatedAt: now,
       assignee: { name: "Backend" },
-      state: { name: "Todo", type: "unstarted" },
+      state: { name: "Todo", type: "unstarted", color: "#94a3b8" },
       parent: { id: "1" },
       relations: { nodes: [] },
       inverseRelations: { nodes: [] }
@@ -700,7 +984,7 @@ function getMockIssues() {
       priority: 3,
       updatedAt: now,
       assignee: { name: "Frontend" },
-      state: { name: "Todo", type: "unstarted" },
+      state: { name: "Todo", type: "unstarted", color: "#94a3b8" },
       parent: { id: "1" },
       relations: { nodes: [] },
       inverseRelations: { nodes: [] }
@@ -713,7 +997,7 @@ function getMockIssues() {
       priority: 1,
       updatedAt: now,
       assignee: { name: "Infra" },
-      state: { name: "Backlog", type: "backlog" },
+      state: { name: "Backlog", type: "backlog", color: "#64748b" },
       parent: { id: "2" },
       relations: {
         nodes: [
@@ -727,4 +1011,401 @@ function getMockIssues() {
       inverseRelations: { nodes: [] }
     }
   ];
+}
+
+function initializeGraphNavigationControls() {
+  updateGraphZoomControls();
+
+  if (graphZoomInBtn) {
+    graphZoomInBtn.addEventListener("click", () => setGraphZoom(graphZoomLevel + GRAPH_ZOOM_STEP));
+  }
+  if (graphZoomOutBtn) {
+    graphZoomOutBtn.addEventListener("click", () => setGraphZoom(graphZoomLevel - GRAPH_ZOOM_STEP));
+  }
+  if (graphZoomResetBtn) {
+    graphZoomResetBtn.addEventListener("click", () => setGraphZoom(graphDefaultZoomLevel));
+  }
+
+  if (!graphOutputEl) {
+    return;
+  }
+
+  graphOutputEl.addEventListener("pointerdown", onGraphPointerDown);
+  graphOutputEl.addEventListener("pointermove", onGraphPointerMove);
+  graphOutputEl.addEventListener("pointerup", onGraphPointerUp);
+  graphOutputEl.addEventListener("pointercancel", stopGraphPanning);
+  graphOutputEl.addEventListener("lostpointercapture", stopGraphPanning);
+  graphOutputEl.addEventListener("wheel", onGraphWheel, { passive: false });
+}
+
+function initializeGraphZoomForRenderedSvg() {
+  const svg = getGraphSvg();
+  if (!svg || !graphOutputEl) {
+    graphBaseSize = { width: 0, height: 0 };
+    graphZoomLevel = 1;
+    graphDefaultZoomLevel = 1;
+    updateGraphZoomControls();
+    return;
+  }
+
+  const baseSize = computeGraphBaseSize(svg);
+  graphBaseSize = baseSize;
+  graphDefaultZoomLevel = computeGraphFitZoom(baseSize, graphOutputEl);
+  graphZoomLevel = graphDefaultZoomLevel;
+  applyGraphZoom();
+  graphOutputEl.scrollTop = 0;
+  graphOutputEl.scrollLeft = 0;
+}
+
+function computeGraphBaseSize(svg) {
+  const viewBox = svg.viewBox && svg.viewBox.baseVal;
+  if (viewBox && viewBox.width > 0 && viewBox.height > 0) {
+    return {
+      width: viewBox.width,
+      height: viewBox.height
+    };
+  }
+
+  const attrWidth = Number.parseFloat(String(svg.getAttribute("width") || ""));
+  const attrHeight = Number.parseFloat(String(svg.getAttribute("height") || ""));
+  if (Number.isFinite(attrWidth) && Number.isFinite(attrHeight) && attrWidth > 0 && attrHeight > 0) {
+    return {
+      width: attrWidth,
+      height: attrHeight
+    };
+  }
+
+  const bounds = svg.getBoundingClientRect();
+  return {
+    width: Math.max(1, bounds.width || 1200),
+    height: Math.max(1, bounds.height || 700)
+  };
+}
+
+function computeGraphFitZoom(baseSize, outputEl) {
+  if (!outputEl || !baseSize.width) {
+    return 1;
+  }
+  const horizontalPadding = 22;
+  const availableWidth = Math.max(1, outputEl.clientWidth - horizontalPadding);
+  const widthFitZoom = availableWidth / baseSize.width;
+  return clampGraphZoom(Math.min(1, widthFitZoom));
+}
+
+function getGraphSvg() {
+  if (!graphOutputEl) {
+    return null;
+  }
+  return graphOutputEl.querySelector("svg");
+}
+
+function applyGraphZoom() {
+  const svg = getGraphSvg();
+  if (!svg || !graphBaseSize.width || !graphBaseSize.height) {
+    updateGraphZoomControls();
+    return;
+  }
+
+  svg.style.width = `${Math.round(graphBaseSize.width * graphZoomLevel)}px`;
+  svg.style.height = `${Math.round(graphBaseSize.height * graphZoomLevel)}px`;
+  updateGraphZoomControls();
+}
+
+function clampGraphZoom(nextZoom) {
+  return Math.max(GRAPH_ZOOM_MIN, Math.min(GRAPH_ZOOM_MAX, nextZoom));
+}
+
+function setGraphZoom(nextZoom, options = {}) {
+  if (!graphOutputEl) {
+    return;
+  }
+
+  const clampedZoom = clampGraphZoom(nextZoom);
+  const previousZoom = graphZoomLevel;
+  if (Math.abs(clampedZoom - previousZoom) < 0.001) {
+    updateGraphZoomControls();
+    return;
+  }
+
+  const anchorX =
+    typeof options.anchorX === "number" ? options.anchorX : graphOutputEl.clientWidth / 2;
+  const anchorY =
+    typeof options.anchorY === "number" ? options.anchorY : graphOutputEl.clientHeight / 2;
+  const contentX = (graphOutputEl.scrollLeft + anchorX) / previousZoom;
+  const contentY = (graphOutputEl.scrollTop + anchorY) / previousZoom;
+
+  graphZoomLevel = clampedZoom;
+  applyGraphZoom();
+
+  graphOutputEl.scrollLeft = Math.max(0, contentX * graphZoomLevel - anchorX);
+  graphOutputEl.scrollTop = Math.max(0, contentY * graphZoomLevel - anchorY);
+}
+
+function updateGraphZoomControls() {
+  const hasRenderedGraph = Boolean(getGraphSvg());
+  const zoomPercent = `${Math.round(graphZoomLevel * 100)}%`;
+
+  if (graphZoomResetBtn) {
+    graphZoomResetBtn.textContent = zoomPercent;
+    graphZoomResetBtn.disabled = !hasRenderedGraph;
+  }
+  if (graphZoomInBtn) {
+    graphZoomInBtn.disabled = !hasRenderedGraph || graphZoomLevel >= GRAPH_ZOOM_MAX;
+  }
+  if (graphZoomOutBtn) {
+    graphZoomOutBtn.disabled = !hasRenderedGraph || graphZoomLevel <= GRAPH_ZOOM_MIN;
+  }
+  if (graphNavHintEl) {
+    graphNavHintEl.textContent = hasRenderedGraph
+      ? `Zoom ${zoomPercent}. Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.`
+      : "Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.";
+  }
+}
+
+function onGraphPointerDown(event) {
+  if (!graphOutputEl || event.button !== 0 || !getGraphSvg()) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof Element && target.closest(".node")) {
+    return;
+  }
+
+  graphPanState = {
+    active: true,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startScrollLeft: graphOutputEl.scrollLeft,
+    startScrollTop: graphOutputEl.scrollTop
+  };
+  graphOutputEl.classList.add("is-panning");
+  graphOutputEl.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+function onGraphPointerMove(event) {
+  if (!graphOutputEl || !graphPanState.active || graphPanState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - graphPanState.startX;
+  const deltaY = event.clientY - graphPanState.startY;
+  graphOutputEl.scrollLeft = graphPanState.startScrollLeft - deltaX;
+  graphOutputEl.scrollTop = graphPanState.startScrollTop - deltaY;
+}
+
+function onGraphPointerUp(event) {
+  if (!graphOutputEl || !graphPanState.active || graphPanState.pointerId !== event.pointerId) {
+    return;
+  }
+  stopGraphPanning();
+}
+
+function stopGraphPanning() {
+  if (!graphOutputEl || !graphPanState.active) {
+    return;
+  }
+  if (
+    graphPanState.pointerId !== null &&
+    graphOutputEl.hasPointerCapture(graphPanState.pointerId)
+  ) {
+    graphOutputEl.releasePointerCapture(graphPanState.pointerId);
+  }
+  graphPanState.active = false;
+  graphPanState.pointerId = null;
+  graphOutputEl.classList.remove("is-panning");
+}
+
+function onGraphWheel(event) {
+  if (!graphOutputEl || !getGraphSvg()) {
+    return;
+  }
+
+  if (!event.ctrlKey && !event.metaKey) {
+    return;
+  }
+
+  event.preventDefault();
+  const rect = graphOutputEl.getBoundingClientRect();
+  const anchorX = event.clientX - rect.left;
+  const anchorY = event.clientY - rect.top;
+  const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
+  setGraphZoom(graphZoomLevel * scaleDirection, { anchorX, anchorY });
+}
+
+function initializeDependencyMapNavigationControls() {
+  updateDepMapZoomControls();
+
+  if (depMapZoomInBtn) {
+    depMapZoomInBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel + GRAPH_ZOOM_STEP));
+  }
+  if (depMapZoomOutBtn) {
+    depMapZoomOutBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel - GRAPH_ZOOM_STEP));
+  }
+  if (depMapZoomResetBtn) {
+    depMapZoomResetBtn.addEventListener("click", () => setDepMapZoom(depMapDefaultZoomLevel));
+  }
+
+  if (!depMapOutputEl) {
+    return;
+  }
+
+  depMapOutputEl.addEventListener("pointerdown", onDepMapPointerDown);
+  depMapOutputEl.addEventListener("pointermove", onDepMapPointerMove);
+  depMapOutputEl.addEventListener("pointerup", onDepMapPointerUp);
+  depMapOutputEl.addEventListener("pointercancel", stopDepMapPanning);
+  depMapOutputEl.addEventListener("lostpointercapture", stopDepMapPanning);
+  depMapOutputEl.addEventListener("wheel", onDepMapWheel, { passive: false });
+}
+
+function initializeDepMapZoomForRenderedSvg() {
+  const svg = getDepMapSvg();
+  if (!svg || !depMapOutputEl) {
+    depMapBaseSize = { width: 0, height: 0 };
+    depMapZoomLevel = 1;
+    depMapDefaultZoomLevel = 1;
+    updateDepMapZoomControls();
+    return;
+  }
+
+  const baseSize = computeGraphBaseSize(svg);
+  depMapBaseSize = baseSize;
+  depMapDefaultZoomLevel = computeGraphFitZoom(baseSize, depMapOutputEl);
+  depMapZoomLevel = depMapDefaultZoomLevel;
+  applyDepMapZoom();
+  depMapOutputEl.scrollTop = 0;
+  depMapOutputEl.scrollLeft = 0;
+}
+
+function getDepMapSvg() {
+  if (!depMapOutputEl) {
+    return null;
+  }
+  return depMapOutputEl.querySelector("svg");
+}
+
+function applyDepMapZoom() {
+  const svg = getDepMapSvg();
+  if (!svg || !depMapBaseSize.width || !depMapBaseSize.height) {
+    updateDepMapZoomControls();
+    return;
+  }
+
+  svg.style.width = `${Math.round(depMapBaseSize.width * depMapZoomLevel)}px`;
+  svg.style.height = `${Math.round(depMapBaseSize.height * depMapZoomLevel)}px`;
+  updateDepMapZoomControls();
+}
+
+function setDepMapZoom(nextZoom, options = {}) {
+  if (!depMapOutputEl) {
+    return;
+  }
+
+  const clampedZoom = clampGraphZoom(nextZoom);
+  const previousZoom = depMapZoomLevel;
+  if (Math.abs(clampedZoom - previousZoom) < 0.001) {
+    updateDepMapZoomControls();
+    return;
+  }
+
+  const anchorX =
+    typeof options.anchorX === "number" ? options.anchorX : depMapOutputEl.clientWidth / 2;
+  const anchorY =
+    typeof options.anchorY === "number" ? options.anchorY : depMapOutputEl.clientHeight / 2;
+  const contentX = (depMapOutputEl.scrollLeft + anchorX) / previousZoom;
+  const contentY = (depMapOutputEl.scrollTop + anchorY) / previousZoom;
+
+  depMapZoomLevel = clampedZoom;
+  applyDepMapZoom();
+
+  depMapOutputEl.scrollLeft = Math.max(0, contentX * depMapZoomLevel - anchorX);
+  depMapOutputEl.scrollTop = Math.max(0, contentY * depMapZoomLevel - anchorY);
+}
+
+function updateDepMapZoomControls() {
+  const hasRenderedGraph = Boolean(getDepMapSvg());
+  const zoomPercent = `${Math.round(depMapZoomLevel * 100)}%`;
+
+  if (depMapZoomResetBtn) {
+    depMapZoomResetBtn.textContent = zoomPercent;
+    depMapZoomResetBtn.disabled = !hasRenderedGraph;
+  }
+  if (depMapZoomInBtn) {
+    depMapZoomInBtn.disabled = !hasRenderedGraph || depMapZoomLevel >= GRAPH_ZOOM_MAX;
+  }
+  if (depMapZoomOutBtn) {
+    depMapZoomOutBtn.disabled = !hasRenderedGraph || depMapZoomLevel <= GRAPH_ZOOM_MIN;
+  }
+  if (depMapNavHintEl) {
+    depMapNavHintEl.textContent = hasRenderedGraph
+      ? `Zoom ${zoomPercent}. Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.`
+      : "Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.";
+  }
+}
+
+function onDepMapPointerDown(event) {
+  if (!depMapOutputEl || event.button !== 0 || !getDepMapSvg()) {
+    return;
+  }
+  depMapPanState = {
+    active: true,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startScrollLeft: depMapOutputEl.scrollLeft,
+    startScrollTop: depMapOutputEl.scrollTop
+  };
+  depMapOutputEl.classList.add("is-panning");
+  depMapOutputEl.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+function onDepMapPointerMove(event) {
+  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - depMapPanState.startX;
+  const deltaY = event.clientY - depMapPanState.startY;
+  depMapOutputEl.scrollLeft = depMapPanState.startScrollLeft - deltaX;
+  depMapOutputEl.scrollTop = depMapPanState.startScrollTop - deltaY;
+}
+
+function onDepMapPointerUp(event) {
+  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
+    return;
+  }
+  stopDepMapPanning();
+}
+
+function stopDepMapPanning() {
+  if (!depMapOutputEl || !depMapPanState.active) {
+    return;
+  }
+  if (
+    depMapPanState.pointerId !== null &&
+    depMapOutputEl.hasPointerCapture(depMapPanState.pointerId)
+  ) {
+    depMapOutputEl.releasePointerCapture(depMapPanState.pointerId);
+  }
+  depMapPanState.active = false;
+  depMapPanState.pointerId = null;
+  depMapOutputEl.classList.remove("is-panning");
+}
+
+function onDepMapWheel(event) {
+  if (!depMapOutputEl || !getDepMapSvg()) {
+    return;
+  }
+  if (!event.ctrlKey && !event.metaKey) {
+    return;
+  }
+
+  event.preventDefault();
+  const rect = depMapOutputEl.getBoundingClientRect();
+  const anchorX = event.clientX - rect.left;
+  const anchorY = event.clientY - rect.top;
+  const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
+  setDepMapZoom(depMapZoomLevel * scaleDirection, { anchorX, anchorY });
 }
