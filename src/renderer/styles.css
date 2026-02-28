@@ -289,6 +289,12 @@ input {
   margin-top: 12px;
 }
 
+.settings-status {
+  margin: 10px 0 0;
+  font-size: 0.86rem;
+  color: var(--muted);
+}
+
 .graph-controls-panel {
   margin-top: 12px;
   border: 1px solid #2a3a4f;
