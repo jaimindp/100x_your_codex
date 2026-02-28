@@ -33,7 +33,17 @@ const metricEvents24hEl = document.getElementById("metric-events-24h");
 const metricSessionsEl = document.getElementById("metric-sessions");
 const metricLastEventEl = document.getElementById("metric-last-event");
 const metricSourceBreakdownEl = document.getElementById("metric-source-breakdown");
-const usageRollupsEl = document.getElementById("usage-rollups");
+const overviewUsageMetaEl = document.getElementById("overview-usage-meta");
+const overviewUsageSessionsChartEl = document.getElementById("overview-usage-sessions-chart");
+const overviewUsageTokensChartEl = document.getElementById("overview-usage-tokens-chart");
+const usageWindowSelectEl = document.getElementById("usage-window-select");
+const usageRefreshBtnEl = document.getElementById("usage-refresh-btn");
+const usageStatusEl = document.getElementById("usage-status");
+const usageSummaryEl = document.getElementById("usage-summary");
+const usageModelChartEl = document.getElementById("usage-model-chart");
+const usageEffortChartEl = document.getElementById("usage-effort-chart");
+const usageTimeChartEl = document.getElementById("usage-time-chart");
+const usageWarningsEl = document.getElementById("usage-warnings");
 const healthSummaryEl = document.getElementById("health-summary");
 const themeToggleBtn = document.getElementById("theme-toggle-btn");
 const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
@@ -47,6 +57,7 @@ const mcpTopSkillsEl = document.getElementById("mcp-top-skills");
 const mcpFilesEl = document.getElementById("mcp-files");
 const mcpHourlyMcpEl = document.getElementById("mcp-hourly-mcp");
 const mcpHourlySkillsEl = document.getElementById("mcp-hourly-skills");
+const mcpOverTimeEl = document.getElementById("mcp-over-time");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 const agentTaskIdInput = document.getElementById("agent-task-id");
@@ -105,11 +116,15 @@ let orchestratorEventUnsubscribe = null;
 let managedServersById = new Map();
 let selectedManagedServerId = "";
 let managedServerEventUnsubscribe = null;
+let isUsageSnapshotInFlight = false;
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 const MCP_MIN_DAYS = 1;
 const MCP_MAX_DAYS = 30;
 const MCP_DEFAULT_DAYS = 7;
+const USAGE_DEFAULT_DAYS = 1;
+const USAGE_MIN_DAYS = 1;
+const USAGE_MAX_DAYS = 30;
 const GRAPH_ZOOM_MIN = 0.2;
 const GRAPH_ZOOM_MAX = 2.2;
 const GRAPH_ZOOM_STEP = 0.15;
@@ -133,7 +148,7 @@ const SCREEN_META = {
   },
   usage: {
     title: "Usage",
-    subtitle: "Usage, timeline, and credits/context visibility."
+    subtitle: "Model and effort token/cost usage visibility."
   },
   "mcp-skills": {
     title: "MCP + Skills",
@@ -206,6 +221,7 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 
 loadLinearSettings();
 initializeGitRepoScanPanel();
+initializeUsagePanel();
 initializeMcpSkillTracking();
 
 function initializeMcpSkillTracking() {
@@ -217,6 +233,7 @@ function initializeMcpSkillTracking() {
   mcpDaysInput.addEventListener("change", () => {
     const days = getValidatedMcpDays();
     mcpDaysInput.value = String(days);
+    loadMcpSkillSnapshot(false);
   });
 
   setMcpStatus("MCP status: ready");
@@ -226,8 +243,239 @@ function initializeMcpSkillTracking() {
   renderMcpList(mcpFilesEl, []);
   renderHourlyBars(mcpHourlyMcpEl, [], "No MCP calls in selected window.");
   renderHourlyBars(mcpHourlySkillsEl, [], "No skill invocations in selected window.");
+  renderHourlyBars(mcpOverTimeEl, [], "No MCP or skill activity in selected window.");
   loadMcpSkillSnapshot(true);
 }
+
+function initializeUsagePanel() {
+  if (!usageWindowSelectEl || !usageRefreshBtnEl) {
+    return;
+  }
+  usageWindowSelectEl.addEventListener("change", () => {
+    const windowDays = getValidatedUsageWindowDays();
+    usageWindowSelectEl.value = String(windowDays);
+    loadCodexUsageSnapshot({ forceRefresh: true });
+  });
+  usageRefreshBtnEl.addEventListener("click", () => loadCodexUsageSnapshot({ forceRefresh: true }));
+  usageWindowSelectEl.value = String(USAGE_DEFAULT_DAYS);
+  setUsageStatus("Usage status: ready");
+  renderUsageSummary({
+    totalSessions: 0,
+    modelsTracked: 0,
+    totalTokens: 0,
+    estimatedCostUsd: 0
+  });
+  renderUsageBars(usageModelChartEl, [], "No model usage in selected window.");
+  renderUsageBars(usageEffortChartEl, [], "No effort usage in selected window.");
+  renderUsageBars(usageTimeChartEl, [], "No usage over time in selected window.");
+  renderUsageWarnings([]);
+  renderOverviewUsageTrends(null);
+  loadCodexUsageSnapshot({ forceRefresh: false });
+}
+
+function getValidatedUsageWindowDays() {
+  if (!usageWindowSelectEl) {
+    return USAGE_DEFAULT_DAYS;
+  }
+  const parsed = Number.parseInt(String(usageWindowSelectEl.value || "").trim(), 10);
+  if (!Number.isFinite(parsed)) {
+    return USAGE_DEFAULT_DAYS;
+  }
+  return Math.max(USAGE_MIN_DAYS, Math.min(USAGE_MAX_DAYS, parsed));
+}
+
+function setUsageStatus(message) {
+  if (usageStatusEl) {
+    usageStatusEl.textContent = message;
+  }
+}
+
+async function loadCodexUsageSnapshot({ forceRefresh }) {
+  if (isUsageSnapshotInFlight) {
+    return;
+  }
+
+  if (!window.monitor?.codexUsage) {
+    setUsageStatus("Usage status: unavailable (secure IPC bridge is not ready)");
+    return;
+  }
+
+  const windowDays = getValidatedUsageWindowDays();
+  isUsageSnapshotInFlight = true;
+  if (usageWindowSelectEl) {
+    usageWindowSelectEl.disabled = true;
+  }
+  if (usageRefreshBtnEl) {
+    usageRefreshBtnEl.disabled = true;
+  }
+  setUsageStatus(forceRefresh ? "Usage status: refreshing..." : "Usage status: loading...");
+
+  try {
+    const method = forceRefresh ? window.monitor.codexUsage.refresh : window.monitor.codexUsage.get;
+    const snapshot = await method({ windowDays });
+    renderUsageSnapshot(snapshot);
+    const hours = Number(snapshot?.summary?.windowHours || windowDays * 24);
+    setUsageStatus(`Usage status: ${snapshot?.status || "ok"} (${hours}h window)`);
+    updateLastRefresh("Usage");
+  } catch (error) {
+    setUsageStatus(`Usage status: ${errorMessage(error)}`);
+  } finally {
+    isUsageSnapshotInFlight = false;
+    if (usageWindowSelectEl) {
+      usageWindowSelectEl.disabled = false;
+    }
+    if (usageRefreshBtnEl) {
+      usageRefreshBtnEl.disabled = false;
+    }
+  }
+}
+
+function renderUsageSnapshot(snapshot) {
+  const summary = snapshot?.summary || {};
+  renderUsageSummary(summary);
+  const byModel = Array.isArray(snapshot?.byModel) ? snapshot.byModel : [];
+  const byEffort = Array.isArray(snapshot?.byEffort) ? snapshot.byEffort : [];
+  renderUsageBars(
+    usageModelChartEl,
+    byModel.map((row) => ({
+      label: String(row?.model || "unknown"),
+      totalTokens: Number(row?.totalTokens || 0),
+      estimatedCostUsd: Number(row?.estimatedCostUsd || 0)
+    })),
+    "No model usage in selected window."
+  );
+  renderUsageBars(
+    usageEffortChartEl,
+    byEffort.map((row) => ({
+      label: String(row?.effort || "unknown"),
+      totalTokens: Number(row?.totalTokens || 0),
+      estimatedCostUsd: Number(row?.estimatedCostUsd || 0)
+    })),
+    "No effort usage in selected window."
+  );
+  const timeSeriesRows = Array.isArray(snapshot?.timeSeries?.rows) ? snapshot.timeSeries.rows : [];
+  const timeSeriesGranularity = String(snapshot?.timeSeries?.granularity || "day");
+  renderUsageBars(
+    usageTimeChartEl,
+    timeSeriesRows.map((row) => ({
+      label: formatUsageTimeBucket(row?.bucketStart, timeSeriesGranularity),
+      totalTokens: Number(row?.totalTokens || 0),
+      estimatedCostUsd: Number(row?.estimatedCostUsd || 0)
+    })),
+    "No usage over time in selected window."
+  );
+  renderUsageWarnings(Array.isArray(snapshot?.warnings) ? snapshot.warnings : []);
+  renderOverviewUsageTrends(snapshot);
+}
+
+function renderOverviewUsageTrends(snapshot) {
+  if (!overviewUsageMetaEl || !overviewUsageSessionsChartEl || !overviewUsageTokensChartEl) {
+    return;
+  }
+
+  const summary = snapshot?.summary || {};
+  const windowDays = Number(summary?.windowDays || snapshot?.window?.days || USAGE_DEFAULT_DAYS);
+  const timeSeriesRows = Array.isArray(snapshot?.timeSeries?.rows) ? snapshot.timeSeries.rows : [];
+  const timeSeriesGranularity = String(snapshot?.timeSeries?.granularity || (windowDays <= 1 ? "hour" : "day"));
+
+  overviewUsageMetaEl.textContent = `Usage trend: ${formatCount(
+    summary?.totalSessions || 0
+  )} session(s) in ${windowDays} day(s), bucketed by ${timeSeriesGranularity}.`;
+  renderHourlyBars(
+    overviewUsageSessionsChartEl,
+    timeSeriesRows.map((row) => ({
+      label: formatUsageTimeBucket(row?.bucketStart, timeSeriesGranularity),
+      value: Number(row?.sessions || 0)
+    })),
+    "No session activity in selected usage window."
+  );
+  renderHourlyBars(
+    overviewUsageTokensChartEl,
+    timeSeriesRows.map((row) => ({
+      label: formatUsageTimeBucket(row?.bucketStart, timeSeriesGranularity),
+      value: Number(row?.totalTokens || 0)
+    })),
+    "No token activity in selected usage window."
+  );
+}
+
+function formatUsageTimeBucket(isoValue, granularity) {
+  if (!isoValue) {
+    return "-";
+  }
+  const date = new Date(isoValue);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  if (granularity === "hour") {
+    return date.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric"
+    });
+  }
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  });
+}
+
+function renderUsageSummary(summary) {
+  if (!usageSummaryEl) {
+    return;
+  }
+  usageSummaryEl.innerHTML = `
+    <div class="usage-summary-item"><span>Sessions</span><strong>${formatCount(summary.totalSessions)}</strong></div>
+    <div class="usage-summary-item"><span>Models</span><strong>${formatCount(summary.modelsTracked)}</strong></div>
+    <div class="usage-summary-item"><span>Tokens</span><strong>${formatInteger(summary.totalTokens)}</strong></div>
+    <div class="usage-summary-item"><span>Estimated Cost</span><strong>${formatCurrency(summary.estimatedCostUsd)}</strong></div>
+  `;
+}
+
+function renderUsageBars(container, rows, emptyMessage) {
+  if (!container) {
+    return;
+  }
+  const chartRows = Array.isArray(rows) ? rows : [];
+  const maxTokens = chartRows.reduce((acc, row) => Math.max(acc, Number(row?.totalTokens || 0)), 0);
+  if (!chartRows.length || maxTokens <= 0) {
+    container.innerHTML = `<div class="usage-row"><span>${escapeHtml(String(emptyMessage || "No data"))}</span></div>`;
+    return;
+  }
+
+  container.innerHTML = chartRows
+    .map((row) => {
+      const totalTokens = Math.max(0, Number(row?.totalTokens || 0));
+      const widthPercent = Math.max(3, Math.round((totalTokens / maxTokens) * 100));
+      return `
+        <div class="usage-row">
+          <strong>${escapeHtml(String(row?.label || "unknown"))}</strong>
+          <div class="usage-bar-track"><span class="usage-bar-fill" style="width:${widthPercent}%"></span></div>
+          <span>${formatInteger(totalTokens)} tokens</span>
+          <span>${formatCurrency(row?.estimatedCostUsd || 0)}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderUsageWarnings(warnings) {
+  if (!usageWarningsEl) {
+    return;
+  }
+  const items = Array.isArray(warnings) ? warnings.filter(Boolean) : [];
+  if (!items.length) {
+    usageWarningsEl.innerHTML = `<div class="usage-row"><span>No warnings.</span></div>`;
+    return;
+  }
+  usageWarningsEl.innerHTML = items
+    .map(
+      (warning) =>
+        `<div class="usage-row"><strong>Warning</strong><span>${escapeHtml(String(warning))}</span></div>`
+    )
+    .join("");
+}
+
 initializeOrchestratorControls();
 initializeManagedServerControls();
 
@@ -428,7 +676,6 @@ async function refreshDashboardFromDb() {
       return;
     }
     renderOverviewMetrics(dashboard.overview);
-    renderUsageRollups(dashboard.usage);
     renderHealthSummary(dashboard.health);
     setMonitorIngestStatus(
       `Ingestion status: loaded ${formatInteger(dashboard.overview?.totalEvents || 0)} events from app DB`
@@ -469,26 +716,6 @@ function renderOverviewMetrics(overview) {
   }
 }
 
-function renderUsageRollups(usageRows) {
-  if (!usageRollupsEl) {
-    return;
-  }
-
-  if (!Array.isArray(usageRows) || usageRows.length === 0) {
-    usageRollupsEl.textContent = "No usage data yet.";
-    return;
-  }
-
-  usageRollupsEl.innerHTML = usageRows
-    .map(
-      (row) =>
-        `<div class=\"usage-row\"><strong>${escapeHtml(row.model)}</strong><span>${formatInteger(
-          row.totalTokens
-        )} tokens</span><span>$${Number(row.estimatedCostUsd || 0).toFixed(4)}</span></div>`
-    )
-    .join("");
-}
-
 function renderHealthSummary(health) {
   if (!healthSummaryEl || !health) {
     return;
@@ -517,6 +744,14 @@ function formatCount(value) {
     return "0";
   }
   return Math.round(numeric).toLocaleString();
+}
+
+function formatCurrency(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric < 0) {
+    return "$0.0000";
+  }
+  return `$${numeric.toFixed(4)}`;
 }
 
 function updateLastRefresh(sourceName) {
@@ -704,41 +939,39 @@ function renderGithubScanOverview({ roots, candidateCount, generatedAt, repos })
     return;
   }
 
+  const totalWorktrees = repos.reduce((sum, repo) => sum + repo.worktrees.length, 0);
+  const detachedCount = repos.reduce((sum, repo) => {
+    return sum + repo.worktrees.filter((worktree) => worktree.detached).length;
+  }, 0);
+  const activeWorktrees = Math.max(0, totalWorktrees - detachedCount);
+  const dirtyWorktrees = repos.reduce((sum, repo) => {
+    return sum + repo.worktrees.filter((worktree) => worktree.dirty).length;
+  }, 0);
   const rootCount = roots.length;
-  const worktreeCount = repos.reduce((sum, repo) => sum + repo.worktrees.length, 0);
-  const detachedCount = repos.reduce(
-    (sum, repo) => sum + repo.worktrees.filter((worktree) => worktree.detached).length,
-    0
-  );
-  const withRecentCommit = repos.filter((repo) => repo.lastCommitUnix > 0).length;
 
   githubScanOverviewEl.innerHTML = `
-    <div class="git-overview-stat">
-      <span class="git-overview-label">Scan Roots</span>
-      <strong>${formatCount(rootCount)}</strong>
-    </div>
-    <div class="git-overview-stat">
-      <span class="git-overview-label">GitHub Repos</span>
+    <div class="git-overview-topline">
       <strong>${formatCount(repos.length)}</strong>
+      <span>${repos.length === 1 ? "repo with worktrees" : "repos with worktrees"}, ${formatCount(
+        activeWorktrees
+      )} active worktrees, ${formatCount(dirtyWorktrees)} dirty.</span>
+    </div>
+    <div class="git-overview-stat git-overview-stat-primary">
+      <strong>${formatCount(totalWorktrees)}</strong>
+      <span class="git-overview-label">Total</span>
     </div>
     <div class="git-overview-stat">
-      <span class="git-overview-label">Worktrees</span>
-      <strong>${formatCount(worktreeCount)}</strong>
+      <strong>${formatCount(activeWorktrees)}</strong>
+      <span class="git-overview-label">Active</span>
     </div>
-    <div class="git-overview-stat">
-      <span class="git-overview-label">Detached</span>
-      <strong>${formatCount(detachedCount)}</strong>
-    </div>
-    <div class="git-overview-stat">
-      <span class="git-overview-label">Recent Commit Known</span>
-      <strong>${formatCount(withRecentCommit)}</strong>
-    </div>
-    <div class="git-overview-stat">
-      <span class="git-overview-label">Git Candidates</span>
-      <strong>${formatCount(candidateCount)}</strong>
+    <div class="git-overview-stat git-overview-stat-warn">
+      <strong>${formatCount(dirtyWorktrees)}</strong>
+      <span class="git-overview-label">Dirty</span>
     </div>
     <p class="git-overview-roots">
-      Roots: ${escapeHtml(roots.join(", ") || "(none)")} | Generated: ${escapeHtml(generatedAt)}
+      Roots: ${escapeHtml(roots.join(", ") || "(none)")} | Scan roots: ${formatCount(
+        rootCount
+      )} | Git candidates: ${formatCount(candidateCount)} | Generated: ${escapeHtml(generatedAt)}
     </p>
   `;
 }
@@ -768,29 +1001,40 @@ function renderGithubScanPage() {
       const worktreeItems = worktrees
         .map((worktree) => {
           const branchLabel = worktree.branch || (worktree.detached ? "(detached)" : "(unknown)");
+          const dirtyLabel = worktree.dirty ? `${formatCount(worktree.dirtyFileCount)} file(s)` : "clean";
           return `
             <li class="git-worktree-row">
+              <div class="git-worktree-row-head">
+                <strong class="git-worktree-branch">${escapeHtml(branchLabel)}</strong>
+                <span class="git-worktree-pills">
+                  <span class="git-worktree-pill">${escapeHtml(
+                    shortSha(String(worktree.head || "unknown"))
+                  )}</span>
+                  <span class="git-worktree-pill ${worktree.dirty ? "is-dirty" : "is-clean"}">${escapeHtml(
+                    dirtyLabel
+                  )}</span>
+                </span>
+              </div>
               <code class="git-path">${escapeHtml(String(worktree.path || ""))}</code>
-              <span class="git-worktree-meta">
-                <span class="git-branch-pill">${escapeHtml(branchLabel)}</span>
-                <span>HEAD ${escapeHtml(shortSha(String(worktree.head || "unknown")))}</span>
-              </span>
             </li>
           `;
         })
         .join("");
+      const repoDirtyWorktrees = worktrees.filter((worktree) => worktree.dirty).length;
 
       return `
         <section class="git-repo-card">
           <div class="git-repo-card-head">
-            <h4>${escapeHtml(String(repo.repoRoot || ""))}</h4>
+            <h4>${escapeHtml(repo.displayName)}</h4>
+            <span class="git-repo-count">${formatCount(worktrees.length)}</span>
             <span class="git-last-seen">${escapeHtml(formatRepoRecency(repo.lastCommitUnix))}</span>
           </div>
+          <p class="git-repo-root">${escapeHtml(String(repo.repoRoot || ""))}</p>
           <div class="git-repo-facts">
             <p class="git-repo-origin"><span>origin</span><code>${escapeHtml(
               String(repo.origin || "(none)")
             )}</code></p>
-            <p class="git-repo-origin"><span>branch</span><strong>${escapeHtml(
+            <p class="git-repo-origin"><span>main</span><strong>${escapeHtml(
               String(repo.currentBranch || "(detached/unknown)")
             )}</strong></p>
             <p class="git-repo-origin"><span>HEAD</span><code>${escapeHtml(
@@ -799,7 +1043,9 @@ function renderGithubScanPage() {
             <p class="git-repo-origin"><span>last commit</span><strong>${escapeHtml(
               formatUnixDate(repo.lastCommitUnix)
             )}</strong></p>
-            <p class="git-repo-origin"><span>worktrees</span><strong>${formatCount(worktrees.length)}</strong></p>
+            <p class="git-repo-origin"><span>dirty worktrees</span><strong>${formatCount(
+              repoDirtyWorktrees
+            )}</strong></p>
           </div>
           <ul class="git-worktree-list">${worktreeItems || "<li>No worktrees listed.</li>"}</ul>
         </section>
@@ -862,7 +1108,8 @@ async function loadMcpSkillSnapshot(isAutoLoad) {
     const snapshot = await window.monitor.mcpSkillTracking.getSnapshot({ days });
     renderMcpSnapshot(snapshot);
     const windowDays = Number(snapshot?.days || snapshot?.windowDays || days);
-    setMcpStatus(`MCP status: scanned ${snapshot.filesScanned} file(s) over ${windowDays} day(s)`);
+    const sessionsScanned = Number(snapshot?.sessionsScanned || snapshot?.filesScanned || 0);
+    setMcpStatus(`MCP status: scanned ${sessionsScanned} session file(s) over ${windowDays} day(s)`);
     setMcpLastUpdated(snapshot.generatedAt);
     updateLastRefresh("MCP + Skills");
   } catch (error) {
@@ -884,14 +1131,14 @@ function renderMcpSnapshot(snapshot) {
   }
   const windowDays = Number(snapshot?.days || snapshot?.windowDays || MCP_DEFAULT_DAYS);
 
-  const windowDays = Number(snapshot?.days || snapshot?.windowDays || MCP_DEFAULT_DAYS);
-
+  const sessionsScanned = Number(snapshot?.sessionsScanned || snapshot?.filesScanned || 0);
+  const skillInvocations = Number(snapshot?.skillInvocationsTotal || snapshot?.skillMentionsTotal || 0);
   renderMcpList(mcpSummaryEl, [
     { label: "Window", value: `${windowDays} day(s)` },
-    { label: "Files scanned", value: snapshot.filesScanned },
-    { label: "Lines scanned", value: snapshot.linesScanned },
+    { label: "Chat sessions scanned", value: sessionsScanned },
+    { label: "Telemetry lines parsed", value: snapshot.linesScanned },
     { label: "MCP tool calls", value: snapshot.mcpToolCallsTotal },
-    { label: "Skill invocations", value: snapshot.skillMentionsTotal },
+    { label: "Skill invocations", value: skillInvocations },
     { label: "Parse errors", value: snapshot.parseErrors }
   ]);
 
@@ -928,8 +1175,41 @@ function renderMcpSnapshot(snapshot) {
     label: formatHourLabel(row?.hour),
     value: Number(row?.skillInvocations || 0)
   }));
+  const overTimeRows = buildMcpOverTimeRows(hourlyRows, windowDays);
   renderHourlyBars(mcpHourlyMcpEl, mcpHourly, "No MCP calls in selected window.");
   renderHourlyBars(mcpHourlySkillsEl, skillHourly, "No skill invocations in selected window.");
+  renderHourlyBars(mcpOverTimeEl, overTimeRows, "No MCP or skill activity in selected window.");
+}
+
+function buildMcpOverTimeRows(hourlyRows, windowDays) {
+  const rows = Array.isArray(hourlyRows) ? hourlyRows : [];
+  if (windowDays <= 1) {
+    return rows.map((row) => ({
+      label: formatHourLabel(row?.hour),
+      value: Number(row?.mcpToolCalls || 0) + Number(row?.skillInvocations || 0)
+    }));
+  }
+
+  const daily = new Map();
+  rows.forEach((row) => {
+    const date = new Date(String(row?.hour || ""));
+    if (Number.isNaN(date.getTime())) {
+      return;
+    }
+    date.setHours(0, 0, 0, 0);
+    const dayKey = date.toISOString();
+    if (!daily.has(dayKey)) {
+      daily.set(dayKey, 0);
+    }
+    daily.set(dayKey, daily.get(dayKey) + Number(row?.mcpToolCalls || 0) + Number(row?.skillInvocations || 0));
+  });
+
+  return Array.from(daily.entries())
+    .sort((left, right) => String(left[0]).localeCompare(String(right[0])))
+    .map(([dayKey, value]) => ({
+      label: formatDayLabel(dayKey),
+      value
+    }));
 }
 
 function renderHourlyBars(container, rows, emptyMessage) {
@@ -971,6 +1251,20 @@ function formatHourLabel(isoTimestamp) {
     month: "short",
     day: "numeric",
     hour: "numeric"
+  });
+}
+
+function formatDayLabel(isoTimestamp) {
+  if (!isoTimestamp) {
+    return "-";
+  }
+  const date = new Date(isoTimestamp);
+  if (Number.isNaN(date.getTime())) {
+    return "-";
+  }
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
   });
 }
 
@@ -1020,18 +1314,32 @@ function normalizeGithubRepo(repo, index) {
         path: String(worktree?.path || ""),
         head: String(worktree?.head || ""),
         branch: String(worktree?.branch || ""),
-        detached: Boolean(worktree?.detached)
+        detached: Boolean(worktree?.detached),
+        dirty: Boolean(worktree?.dirty),
+        dirtyFileCount: parsePositiveNumber(worktree?.dirtyFileCount, 0)
       }))
     : [];
 
   return {
     repoRoot,
+    displayName: deriveRepoDisplayName(repoRoot, repo?.origin, index),
     origin: String(repo?.origin || ""),
     currentBranch: String(repo?.currentBranch || ""),
     head: String(repo?.head || ""),
     lastCommitUnix: parsePositiveNumber(repo?.lastCommitUnix, 0),
     worktrees
   };
+}
+
+function deriveRepoDisplayName(repoRoot, origin, index) {
+  const originText = String(origin || "");
+  const originMatch = originText.match(/\/([^/]+?)(?:\.git)?$/);
+  if (originMatch?.[1]) {
+    return originMatch[1];
+  }
+  const trimmedPath = String(repoRoot || "").replace(/[\\/]+$/, "");
+  const pathName = trimmedPath.split(/[\\/]/).filter(Boolean).pop();
+  return pathName || `repo-${index + 1}`;
 }
 
 function formatGithubScanCacheLabel(cache) {

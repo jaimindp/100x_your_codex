@@ -1,10 +1,10 @@
 {
   "ok": true,
-  "ranAt": "2026-02-28T09:12:21.040Z",
+  "ranAt": "2026-02-28T09:50:16.358Z",
   "rootInput": "~/Documents/Vault/Hacks",
-  "status": "Git scan status: completed (fresh)",
-  "summary": "Scan summary: 7 GitHub repos | 14 git candidates | generated 28/02/2026, 17:12:20",
+  "status": "Git scan status: completed (cached 14s ago)",
+  "summary": "Scan summary: 7 GitHub repos | 14 git candidates | generated 28/02/2026, 17:50:01",
   "repoCount": 7,
-  "firstRepo": "/Users/jaimin/Documents/Vault/Hacks/Monitor",
+  "firstRepo": "100x_your_codex",
   "screenshotPath": "/Users/jaimin/Documents/Vault/Hacks/Monitor/docs/hack-37-playwright-git-worktrees.png"
 }

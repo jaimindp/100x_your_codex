@@ -350,6 +350,65 @@ function clampSubagentCount(value) {
   return Math.max(SUBAGENT_MIN, Math.min(SUBAGENT_MAX, parsed));
 }
 
+function sanitizeBranchSegment(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function buildTaskBranchName(taskId, taskTitle) {
+  const idPart = sanitizeBranchSegment(taskId);
+  const titlePart = sanitizeBranchSegment(taskTitle);
+  const combined = [idPart, titlePart].filter(Boolean).join("-");
+  const normalized = combined || "task";
+  return normalized.slice(0, 72);
+}
+
+async function branchExists(repoRoot, branch) {
+  try {
+    await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`], {
+      cwd: repoRoot,
+      capture: true,
+    });
+    return true;
+  } catch (_error) {
+    return false;
+  }
+}
+
+async function ensureTaskBranch({ repoRoot, repoContext, taskId, taskTitle, dryRun }) {
+  if (!["main", "master"].includes(repoContext.branch)) {
+    return repoContext;
+  }
+
+  const baseBranch = buildTaskBranchName(taskId, taskTitle);
+  let candidate = baseBranch;
+  let counter = 2;
+
+  if (!dryRun) {
+    while (await branchExists(repoRoot, candidate)) {
+      candidate = `${baseBranch}-${counter}`;
+      counter += 1;
+    }
+  }
+
+  console.log(
+    `Current branch is '${repoContext.branch}'. Creating and switching to task branch '${candidate}'.`
+  );
+  await git(["switch", "-c", candidate], {
+    cwd: repoRoot,
+    dryRun,
+  });
+
+  return {
+    ...repoContext,
+    branch: candidate,
+  };
+}
+
 function complexityLevelFromScore(score) {
   if (score <= 3) {
     return "low";
@@ -1141,9 +1200,13 @@ async function main() {
     );
   }
 
-  if (["main", "master"].includes(repoContext.branch)) {
-    throw new Error(`Refusing to run on branch '${repoContext.branch}'. Use a task branch/worktree.`);
-  }
+  const activeRepoContext = await ensureTaskBranch({
+    repoRoot,
+    repoContext,
+    taskId: rawArgs.taskId,
+    taskTitle: rawArgs.taskTitle,
+    dryRun: rawArgs.dryRun,
+  });
 
   const planPromptPath = path.join(scriptRoot, "templates", "plan.prompt.md");
   const implPromptPath = path.join(scriptRoot, "templates", "implementation.prompt.md");
@@ -1174,7 +1237,7 @@ async function main() {
     TASK_TITLE: rawArgs.taskTitle,
     TICKET_BRIEF: ticketBrief,
     REPO_ROOT: repoRoot,
-    BRANCH: repoContext.branch,
+    BRANCH: activeRepoContext.branch,
     COMPLEXITY_CONTEXT: complexityContext,
     PHASE_SUBAGENT_BUDGET: String(phaseSubagentBudgets.plan),
   });
@@ -1201,7 +1264,7 @@ async function main() {
     TICKET_BRIEF: ticketBrief,
     PLAN_JSON: JSON.stringify(planJson, null, 2),
     REPO_ROOT: repoRoot,
-    BRANCH: repoContext.branch,
+    BRANCH: activeRepoContext.branch,
     COMPLEXITY_CONTEXT: complexityContext,
     PHASE_SUBAGENT_BUDGET: String(phaseSubagentBudgets.implementation),
   });
@@ -1233,7 +1296,7 @@ async function main() {
     PLAN_JSON: JSON.stringify(planJson, null, 2),
     IMPLEMENTATION_JSON: JSON.stringify(implementationJson, null, 2),
     REPO_ROOT: repoRoot,
-    BRANCH: repoContext.branch,
+    BRANCH: activeRepoContext.branch,
     COMPLEXITY_CONTEXT: complexityContext,
     PHASE_SUBAGENT_BUDGET: String(phaseSubagentBudgets.test),
   });
@@ -1270,7 +1333,7 @@ async function main() {
     planJson,
     implJson: implementationJson,
     testJson,
-    branch: repoContext.branch,
+    branch: activeRepoContext.branch,
     runDir,
   });
 
@@ -1287,14 +1350,14 @@ async function main() {
   }
 
   if (!rawArgs.dryRun && !rawArgs.skipPush) {
-    await pushBranch({ repoRoot, branch: repoContext.branch, dryRun: rawArgs.dryRun });
+    await pushBranch({ repoRoot, branch: activeRepoContext.branch, dryRun: rawArgs.dryRun });
   }
 
   if (!rawArgs.noPr) {
     prUrl = await createPr({
       repoRoot,
       base: rawArgs.base,
-      head: repoContext.branch,
+      head: activeRepoContext.branch,
       title: prArtifact.title,
       bodyPath: prBodyPath,
       draft: rawArgs.draftPr,
@@ -1334,7 +1397,7 @@ async function main() {
     plan_effort: rawArgs.planEffort,
     implementation_effort: rawArgs.implEffort,
     test_effort: rawArgs.testEffort,
-    branch: repoContext.branch,
+    branch: activeRepoContext.branch,
     base: rawArgs.base,
     linear_issue: rawArgs.linearIssue || "",
     watch_until_done: Boolean(rawArgs.watchUntilDone),

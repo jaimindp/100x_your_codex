@@ -7,6 +7,7 @@ const { promisify } = require("util");
 const { spawn, execFile } = require("child_process");
 const { randomUUID, createHash } = require("crypto");
 const { app, BrowserWindow, ipcMain } = require("electron");
+const { createMonitorDataService } = require("./monitor-data");
 
 const execFileAsync = promisify(execFile);
 
@@ -43,11 +44,12 @@ const SQLITE_THREAD_QUERY_LIMIT = 2500;
 const USAGE_SESSION_LIST_LIMIT = 200;
 const SESSION_PARSE_CONCURRENCY = 8;
 const USAGE_SNAPSHOT_VERSION = 1;
-const USAGE_ROLLUP_WINDOW_HOURS = 24;
+const USAGE_ROLLUP_DEFAULT_WINDOW_DAYS = 1;
+const USAGE_ROLLUP_MIN_WINDOW_DAYS = 1;
+const USAGE_ROLLUP_MAX_WINDOW_DAYS = 30;
 const MCP_TRACKING_MIN_DAYS = 1;
 const MCP_TRACKING_MAX_DAYS = 30;
 const MCP_TRACKING_DEFAULT_DAYS = 7;
-const MCP_TRACKING_MAX_FILES = 5000;
 
 const DEFAULT_PRICING_CONFIG = {
   fallbackRateUsdPer1MTokens: 5,
@@ -58,6 +60,15 @@ const DEFAULT_PRICING_CONFIG = {
     "gpt-5.1-codex-mini": 2
   },
   note: "Estimated cost uses local blended-rate assumptions. Replace with your real rates."
+};
+
+const MCP_SNAPSHOT_DEFAULTS = {
+  minDays: 1,
+  maxDays: 30,
+  defaultDays: 7,
+  maxFiles: 50,
+  maxLinesPerFile: 2500,
+  maxTopItems: 10
 };
 
 function getEnvFilePath() {
@@ -525,35 +536,64 @@ function bumpHourCounter(hourCounter, hourKey, fieldName, amount = 1) {
   hourCounter.set(hourKey, current);
 }
 
-async function listSessionEventFiles(rootPath) {
-  const files = [];
-  const stack = [rootPath];
+function formatDatePathPart(value) {
+  return String(value).padStart(2, "0");
+}
 
-  while (stack.length > 0 && files.length < MCP_TRACKING_MAX_FILES) {
-    const currentPath = stack.pop();
+function getRecentSessionDatePaths(days) {
+  const paths = [];
+  const now = new Date();
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = new Date(now);
+    date.setDate(now.getDate() - offset);
+    const year = String(date.getFullYear());
+    const month = formatDatePathPart(date.getMonth() + 1);
+    const day = formatDatePathPart(date.getDate());
+    paths.push(path.join(year, month, day));
+  }
+  return paths;
+}
+
+async function listSessionEventFiles(rootPath, days) {
+  const files = [];
+  const dateDirs = getRecentSessionDatePaths(clampMcpTrackingDays(days));
+
+  for (const relativeDatePath of dateDirs) {
+    const absoluteDatePath = path.join(rootPath, relativeDatePath);
     let entries = [];
     try {
-      entries = await fs.readdir(currentPath, { withFileTypes: true });
+      entries = await fs.readdir(absoluteDatePath, { withFileTypes: true });
     } catch {
       continue;
     }
 
     entries.forEach((entry) => {
-      const fullPath = path.join(currentPath, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(fullPath);
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
         return;
       }
-      if (!entry.isFile()) {
-        return;
-      }
-      if (entry.name.endsWith(".jsonl")) {
-        files.push(fullPath);
-      }
+      files.push(path.join(absoluteDatePath, entry.name));
     });
   }
 
-  return files.sort();
+  const filesWithStats = await Promise.all(
+    files.map(async (filePath) => {
+      try {
+        const stat = await fs.stat(filePath);
+        return {
+          filePath,
+          mtimeMs: stat.mtimeMs
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return filesWithStats
+    .filter(Boolean)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs)
+    .slice(0, MCP_SNAPSHOT_DEFAULTS.maxFiles)
+    .map((entry) => entry.filePath);
 }
 
 async function getMcpSkillTrackingSnapshot(rawDays) {
@@ -568,10 +608,12 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
     generatedAt: new Date(nowMs).toISOString(),
     days,
     filesScanned: 0,
+    sessionsScanned: 0,
     linesScanned: 0,
     parseErrors: 0,
     mcpToolCallsTotal: 0,
     skillMentionsTotal: 0,
+    skillInvocationsTotal: 0,
     topMcpTools: [],
     topSkills: [],
     topFiles: [],
@@ -590,7 +632,7 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
     return snapshot;
   }
 
-  const files = await listSessionEventFiles(sessionsRoot);
+  const files = await listSessionEventFiles(sessionsRoot, days);
   const mcpCounter = new Map();
   const skillCounter = new Map();
   const fileCounter = new Map();
@@ -598,6 +640,7 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
 
   for (const filePath of files) {
     snapshot.filesScanned += 1;
+    snapshot.sessionsScanned += 1;
     const stream = fsSync.createReadStream(filePath, { encoding: "utf8" });
     const lineReader = readline.createInterface({
       input: stream,
@@ -643,6 +686,7 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
         invokedSkills.forEach((skillName) => {
           bumpCounter(skillCounter, skillName);
           snapshot.skillMentionsTotal += 1;
+          snapshot.skillInvocationsTotal += 1;
           bumpCounter(fileCounter, path.basename(filePath));
           bumpHourCounter(hourCounter, hourKey, "skillInvocations", 1);
         });
@@ -658,7 +702,7 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
   );
   if (snapshot.filesScanned === 0) {
     snapshot.status = "empty";
-    snapshot.warnings.push("No Codex session event files were found.");
+    snapshot.warnings.push("No Codex session files were found.");
   }
   return snapshot;
 }
@@ -831,6 +875,14 @@ async function readUsageSnapshotCache() {
     }
     return null;
   }
+}
+
+function normalizeUsageWindowDays(rawValue) {
+  const parsed = Number.parseInt(String(rawValue || ""), 10);
+  if (!Number.isFinite(parsed)) {
+    return USAGE_ROLLUP_DEFAULT_WINDOW_DAYS;
+  }
+  return Math.max(USAGE_ROLLUP_MIN_WINDOW_DAYS, Math.min(USAGE_ROLLUP_MAX_WINDOW_DAYS, parsed));
 }
 
 async function saveUsageSnapshotCache(snapshot) {
@@ -1211,7 +1263,50 @@ function summarizeByEffort(rows) {
   });
 }
 
-function buildUsageErrorSnapshot(error) {
+function summarizeUsageOverTime(rows, windowDays) {
+  const useHourlyBuckets = windowDays <= 1;
+  const buckets = new Map();
+
+  rows.forEach((row) => {
+    if (row.totalTokens <= 0) {
+      return;
+    }
+    const timestampMs = Number(row.timestampMs);
+    if (!Number.isFinite(timestampMs)) {
+      return;
+    }
+
+    const bucketDate = new Date(timestampMs);
+    if (useHourlyBuckets) {
+      bucketDate.setMinutes(0, 0, 0);
+    } else {
+      bucketDate.setHours(0, 0, 0, 0);
+    }
+    const bucketStart = bucketDate.toISOString();
+
+    if (!buckets.has(bucketStart)) {
+      buckets.set(bucketStart, {
+        bucketStart,
+        sessions: 0,
+        totalTokens: 0,
+        estimatedCostUsd: 0
+      });
+    }
+    const entry = buckets.get(bucketStart);
+    entry.sessions += 1;
+    entry.totalTokens += row.totalTokens;
+    entry.estimatedCostUsd += row.estimatedCostUsd;
+  });
+
+  return {
+    granularity: useHourlyBuckets ? "hour" : "day",
+    rows: Array.from(buckets.values()).sort((a, b) => String(a.bucketStart).localeCompare(String(b.bucketStart)))
+  };
+}
+
+function buildUsageErrorSnapshot(error, options = {}) {
+  const windowDays = normalizeUsageWindowDays(options?.windowDays);
+  const windowHours = windowDays * 24;
   return {
     version: USAGE_SNAPSHOT_VERSION,
     status: "error",
@@ -1220,9 +1315,21 @@ function buildUsageErrorSnapshot(error) {
       totalSessions: 0,
       modelsTracked: 0,
       totalTokens: 0,
-      estimatedCostUsd: 0
+      estimatedCostUsd: 0,
+      windowHours,
+      windowDays
+    },
+    window: {
+      hours: windowHours,
+      days: windowDays,
+      cutoffAt: new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString()
     },
     byModel: [],
+    byEffort: [],
+    timeSeries: {
+      granularity: windowDays <= 1 ? "hour" : "day",
+      rows: []
+    },
     sessions: [],
     sources: {
       codexHome: getCodexHomePath(),
@@ -1237,12 +1344,14 @@ function buildUsageErrorSnapshot(error) {
   };
 }
 
-async function buildCodexUsageSnapshot() {
+async function buildCodexUsageSnapshot(options = {}) {
   const codexHome = getCodexHomePath();
   const stateDbPath = getCodexStateDbPath();
   const warnings = [];
   const generatedAtMs = Date.now();
-  const cutoffMs = generatedAtMs - USAGE_ROLLUP_WINDOW_HOURS * 60 * 60 * 1000;
+  const windowDays = normalizeUsageWindowDays(options?.windowDays);
+  const windowHours = windowDays * 24;
+  const cutoffMs = generatedAtMs - windowHours * 60 * 60 * 1000;
   const cutoffAtIso = new Date(cutoffMs).toISOString();
   const pricingSettings = await getPricingSettings();
   const threadRows = await readThreadsFromStateDb(stateDbPath);
@@ -1327,6 +1436,7 @@ async function buildCodexUsageSnapshot() {
       source: thread.source || "",
       tokenSource,
       inRollupWindow,
+      timestampMs: Number.isFinite(rowTimestampMs) ? rowTimestampMs : null,
       tokenBreakdown: telemetry.tokenUsage,
       telemetryWarnings: telemetry.warnings || []
     };
@@ -1341,6 +1451,7 @@ async function buildCodexUsageSnapshot() {
   const rollupRows = sessionRows.filter((row) => row.inRollupWindow);
   const byModel = summarizeByModel(rollupRows);
   const byEffort = summarizeByEffort(rollupRows);
+  const timeSeries = summarizeUsageOverTime(rollupRows, windowDays);
   const totalTokens = rollupRows.reduce((sum, row) => sum + row.totalTokens, 0);
   const estimatedCostUsd = rollupRows.reduce((sum, row) => sum + row.estimatedCostUsd, 0);
 
@@ -1349,7 +1460,7 @@ async function buildCodexUsageSnapshot() {
   }
   if (skippedCumulativeTokenRows > 0) {
     warnings.push(
-      `${skippedCumulativeTokenRows} long-lived session(s) had cumulative thread totals excluded from 24h rollups.`
+      `${skippedCumulativeTokenRows} long-lived session(s) had cumulative thread totals excluded from ${windowHours}h rollups.`
     );
   }
 
@@ -1362,14 +1473,17 @@ async function buildCodexUsageSnapshot() {
       modelsTracked: byModel.length,
       totalTokens,
       estimatedCostUsd,
-      windowHours: USAGE_ROLLUP_WINDOW_HOURS
+      windowHours,
+      windowDays
     },
     window: {
-      hours: USAGE_ROLLUP_WINDOW_HOURS,
+      hours: windowHours,
+      days: windowDays,
       cutoffAt: cutoffAtIso
     },
     byModel,
     byEffort,
+    timeSeries,
     sessions: rollupRows.slice(0, USAGE_SESSION_LIST_LIMIT),
     sources: {
       codexHome,
@@ -1386,24 +1500,33 @@ async function buildCodexUsageSnapshot() {
   };
 }
 
-async function refreshCodexUsageSnapshot() {
+async function refreshCodexUsageSnapshot(options = {}) {
+  const windowDays = normalizeUsageWindowDays(options?.windowDays);
   try {
-    const snapshot = await buildCodexUsageSnapshot();
-    await saveUsageSnapshotCache(snapshot);
+    const snapshot = await buildCodexUsageSnapshot({ windowDays });
+    if (windowDays === USAGE_ROLLUP_DEFAULT_WINDOW_DAYS) {
+      await saveUsageSnapshotCache(snapshot);
+    }
     return snapshot;
   } catch (error) {
-    const errorSnapshot = buildUsageErrorSnapshot(error);
-    await saveUsageSnapshotCache(errorSnapshot);
+    const errorSnapshot = buildUsageErrorSnapshot(error, { windowDays });
+    if (windowDays === USAGE_ROLLUP_DEFAULT_WINDOW_DAYS) {
+      await saveUsageSnapshotCache(errorSnapshot);
+    }
     return errorSnapshot;
   }
 }
 
-async function getCodexUsageSnapshot() {
+async function getCodexUsageSnapshot(options = {}) {
+  const windowDays = normalizeUsageWindowDays(options?.windowDays);
+  if (windowDays !== USAGE_ROLLUP_DEFAULT_WINDOW_DAYS) {
+    return refreshCodexUsageSnapshot({ windowDays });
+  }
   const cached = await readUsageSnapshotCache();
   if (cached) {
     return cached;
   }
-  return refreshCodexUsageSnapshot();
+  return refreshCodexUsageSnapshot({ windowDays });
 }
 
 function parseArgsText(value) {
@@ -1889,21 +2012,6 @@ async function removeManagedServer(serverId) {
   return buildManagedServerResponse();
 }
 
-async function clearStaleServiceWorkerStorage() {
-  const serviceWorkerPath = path.join(app.getPath("userData"), "Service Worker");
-
-  try {
-    await fs.rm(serviceWorkerPath, {
-      recursive: true,
-      force: true,
-      maxRetries: 2,
-      retryDelay: 100
-    });
-  } catch (error) {
-    console.warn("Could not clear stale Service Worker storage:", error);
-  }
-}
-
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -2269,8 +2377,6 @@ function getOrchestratorStatus(runId) {
 }
 
 app.whenReady().then(async () => {
-  await clearStaleServiceWorkerStorage();
-
   try {
     monitorDataService = createMonitorDataService();
   } catch (error) {
@@ -2314,8 +2420,8 @@ app.whenReady().then(async () => {
   ipcMain.handle("orchestrator:start", (_event, payload) => startOrchestratorRun(payload));
   ipcMain.handle("orchestrator:stop", (_event, payload) => stopOrchestratorRun(payload?.runId));
   ipcMain.handle("orchestrator:status", (_event, payload) => getOrchestratorStatus(payload?.runId));
-  ipcMain.handle("codex-usage:get", () => getCodexUsageSnapshot());
-  ipcMain.handle("codex-usage:refresh", () => refreshCodexUsageSnapshot());
+  ipcMain.handle("codex-usage:get", (_event, options) => getCodexUsageSnapshot(options));
+  ipcMain.handle("codex-usage:refresh", (_event, options) => refreshCodexUsageSnapshot(options));
   createWindow();
 
   app.on("activate", () => {

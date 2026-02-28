@@ -67,6 +67,17 @@ function runGit(cwd, args) {
   return proc.stdout.trim();
 }
 
+function getDirtyFileCount(worktreePath) {
+  const statusOutput = runGit(worktreePath, ["status", "--porcelain"]);
+  if (!statusOutput) {
+    return 0;
+  }
+  return statusOutput
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean).length;
+}
+
 function safeRealPath(inputPath) {
   try {
     return fs.realpathSync(inputPath);
@@ -148,7 +159,13 @@ function parseWorktreePorcelain(output) {
 
   return rows.map((row) => {
     const resolvedPath = safeRealPath(row.path) || row.path;
-    return { ...row, path: resolvedPath };
+    const dirtyFileCount = getDirtyFileCount(resolvedPath);
+    return {
+      ...row,
+      path: resolvedPath,
+      dirtyFileCount,
+      dirty: dirtyFileCount > 0,
+    };
   });
 }
 
@@ -271,7 +288,9 @@ function renderText(report) {
     lines.push(`Worktrees: ${repo.worktrees.length}`);
     for (const wt of repo.worktrees) {
       const branch = wt.branch || (wt.detached ? "(detached)" : "(unknown)");
-      lines.push(`  - ${wt.path} | ${branch} | ${wt.head || "(no-head)"}`);
+      lines.push(
+        `  - ${wt.path} | ${branch} | ${wt.head || "(no-head)"} | dirty files: ${wt.dirtyFileCount || 0}`
+      );
     }
     lines.push("");
   }

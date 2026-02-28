@@ -71,6 +71,20 @@
               </div>
             </div>
             <p id="metric-source-breakdown" class="metric-subtext">Sources: n/a</p>
+            <section class="overview-usage-section">
+              <h4>Usage Over Time</h4>
+              <p id="overview-usage-meta" class="metric-subtext">Usage trend: waiting for usage snapshot.</p>
+              <div class="usage-grid">
+                <section>
+                  <h4>Sessions</h4>
+                  <div id="overview-usage-sessions-chart" class="mcp-hourly-chart"></div>
+                </section>
+                <section>
+                  <h4>Tokens</h4>
+                  <div id="overview-usage-tokens-chart" class="mcp-hourly-chart"></div>
+                </section>
+              </div>
+            </section>
           </div>
         </main>
 
@@ -242,8 +256,53 @@
         <main class="screen-panel" data-screen-panel="usage">
           <div class="card">
             <h3>Usage</h3>
-            <p>Model token/cost rollups from ingested local telemetry (last 24h).</p>
-            <div id="usage-rollups" class="usage-rollups">No usage data yet.</div>
+            <p>Model and effort token/cost rollups from local Codex telemetry.</p>
+            <div class="usage-controls">
+              <label for="usage-window-select">Window</label>
+              <select id="usage-window-select">
+                <option value="1">Last 24 hours</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
+              <button id="usage-refresh-btn" type="button">Refresh Usage</button>
+            </div>
+            <p id="usage-status" class="settings-status">Usage status: idle</p>
+            <div id="usage-summary" class="usage-summary">
+              <div class="usage-summary-item">
+                <span>Sessions</span>
+                <strong>0</strong>
+              </div>
+              <div class="usage-summary-item">
+                <span>Models</span>
+                <strong>0</strong>
+              </div>
+              <div class="usage-summary-item">
+                <span>Tokens</span>
+                <strong>0</strong>
+              </div>
+              <div class="usage-summary-item">
+                <span>Estimated Cost</span>
+                <strong>$0.0000</strong>
+              </div>
+            </div>
+            <div class="usage-grid">
+              <section>
+                <h4>By Model</h4>
+                <div id="usage-model-chart" class="usage-rollups">No usage data yet.</div>
+              </section>
+              <section>
+                <h4>By Effort</h4>
+                <div id="usage-effort-chart" class="usage-rollups">No usage data yet.</div>
+              </section>
+              <section>
+                <h4>Over Time</h4>
+                <div id="usage-time-chart" class="usage-rollups">No usage data yet.</div>
+              </section>
+            </div>
+            <div>
+              <h4>Warnings</h4>
+              <div id="usage-warnings" class="usage-rollups">No warnings.</div>
+            </div>
           </div>
         </main>
 
@@ -251,11 +310,15 @@
           <div class="card mcp-skills-card">
             <header class="mcp-skills-header">
               <h3>MCP + Skills</h3>
-              <p>Local Codex session scan for MCP tool calls and skill mentions.</p>
+              <p>Local Codex chat session scan for MCP tool calls and skill invocations.</p>
             </header>
             <div class="mcp-controls">
-              <label for="mcp-days-input">Lookback (days)</label>
-              <input id="mcp-days-input" type="number" min="1" max="30" step="1" value="7" />
+              <label for="mcp-days-input">Window</label>
+              <select id="mcp-days-input">
+                <option value="1">Last 24 hours</option>
+                <option value="7" selected>Last 7 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
               <button id="mcp-refresh-btn" type="button">Refresh Snapshot</button>
             </div>
             <p id="mcp-status" class="mcp-status">MCP status: idle</p>
@@ -279,7 +342,7 @@
             </div>
 
             <section class="mcp-panel">
-              <h4>Recent Session Files</h4>
+              <h4>Top Session Files</h4>
               <div id="mcp-files" class="mcp-list"></div>
             </section>
 
@@ -293,6 +356,10 @@
                 <div id="mcp-hourly-skills" class="mcp-hourly-chart"></div>
               </section>
             </div>
+            <section class="mcp-panel">
+              <h4>MCP + Skills Over Time</h4>
+              <div id="mcp-over-time" class="mcp-hourly-chart"></div>
+            </section>
           </div>
         </main>
 

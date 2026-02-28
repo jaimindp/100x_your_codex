@@ -54,7 +54,7 @@ contextBridge.exposeInMainWorld("monitor", {
     }
   },
   codexUsage: {
-    get: () => ipcRenderer.invoke("codex-usage:get"),
-    refresh: () => ipcRenderer.invoke("codex-usage:refresh")
+    get: (options) => ipcRenderer.invoke("codex-usage:get", options),
+    refresh: (options) => ipcRenderer.invoke("codex-usage:refresh", options)
   }
 });

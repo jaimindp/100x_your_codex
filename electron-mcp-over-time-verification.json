@@ -1,0 +1,16 @@
+{
+  "checks": {
+    "windowSelectPresent": true,
+    "refreshButtonPresent": true,
+    "overTimeChartPresent": true,
+    "statusHasWindowData": true,
+    "overTimeRendered": true
+  },
+  "status": {
+    "mcpStatus": "MCP status: scanned 50 session file(s) over 30 day(s)",
+    "overTimeSample": "28 Feb\n          \n          216"
+  },
+  "artifacts": {
+    "screenshot": "/Users/jaimin/Documents/Vault/Hacks/Monitor/electron-mcp-over-time-verification.png"
+  }
+}

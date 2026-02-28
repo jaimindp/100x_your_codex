@@ -1,0 +1,24 @@
+{
+  "checks": {
+    "windowSelectPresent": true,
+    "refreshButtonPresent": true,
+    "modelChartPresent": true,
+    "effortChartPresent": true,
+    "timeChartPresent": true,
+    "statusMentionsWindow": true,
+    "summaryRendered": true,
+    "modelChartRendered": true,
+    "effortChartRendered": true,
+    "timeChartRendered": true
+  },
+  "status": {
+    "usageStatus": "Usage status: ok (168h window)",
+    "summarySample": "Sessions491\n    Models2\n    Tokens2,898,338,901\n    Estimated Cost$13518.8254",
+    "modelSample": "gpt-5.3-codex\n          \n          2,574,049,214 tokens\n          $12870.2461\n        \n      \n        \n          gpt-5.1-codex-mini\n          \n          324,289,687 tokens\n          $648.5794",
+    "effortSample": "low\n          \n          6,689,698 tokens\n          $33.4485\n        \n      \n        \n          medium\n          \n          411,459,493 tokens\n          $1084.4284\n        \n      \n        \n          high\n          \n          2,157,113,200 tokens\n          $10785.5660\n        \n      \n        \n       ",
+    "timeSample": "21 Feb\n          \n          154,318,116 tokens\n          $769.4901\n        \n      \n        \n          22 Feb\n          \n          79,194,327 tokens\n          $379.3862\n        \n      \n        \n          23 Feb\n          \n          209,168,297 tokens\n          $958.1623\n        \n      \n        \n     "
+  },
+  "artifacts": {
+    "screenshot": "/Users/jaimin/Documents/Vault/Hacks/Monitor/electron-usage-breakdown-verification.png"
+  }
+}
