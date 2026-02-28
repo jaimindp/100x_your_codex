@@ -69,7 +69,7 @@ CODEX_BIN=/absolute/path/to/codex npm run start
   - Blocker relationships (blocking issue -> blocked issue).
 - The first successful `Load Linear Issues` saves `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` in a local `.env` file at the repo root, and these fields are auto-filled on next launch.
 - When saved credentials exist, the app automatically loads Linear issues on startup.
-- Connection settings are in an expandable panel and auto-collapse when saved credentials are detected, so the graph stays in focus.
+- Connection settings are available from the dedicated `Settings` page. Use `Save Settings` to persist values or `Load Linear Issues` to save and load in one step.
 
 Notes:
 - Mermaid is loaded from CDN (`jsdelivr`) at runtime.

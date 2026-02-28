@@ -1,16 +1,18 @@
 const linearApiKeyInput = document.getElementById("linear-api-key");
 const linearTeamKeyInput = document.getElementById("linear-team-key");
+const linearSaveSettingsBtn = document.getElementById("linear-save-settings");
 const graphLoadLinearBtn = document.getElementById("graph-load-linear");
 const graphLoadMockBtn = document.getElementById("graph-load-mock");
 const graphControlsPanel = document.getElementById("graph-controls-panel");
 const graphStatusEl = document.getElementById("graph-status");
+const settingsStatusEl = document.getElementById("settings-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
-const themeDarkBtn = document.getElementById("theme-dark-btn");
-const themeLightBtn = document.getElementById("theme-light-btn");
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
+const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
@@ -96,14 +98,17 @@ if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
   graphLoadLinearBtn.addEventListener("click", () => loadLinearIssuesFromInputs(false));
 }
 
+if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
+  linearSaveSettingsBtn.addEventListener("click", saveLinearSettingsFromInputs);
+}
+
 loadLinearSettings();
 
 function initializeThemeControls() {
-  if (themeDarkBtn) {
-    themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
-  }
-  if (themeLightBtn) {
-    themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      setThemePreference(currentTheme === "dark" ? "light" : "dark");
+    });
   }
 
   loadThemeSettings();
@@ -148,16 +153,19 @@ function applyTheme(theme) {
   currentTheme = normalizedTheme;
   document.documentElement.setAttribute("data-theme", normalizedTheme);
 
-  if (themeDarkBtn) {
-    const isDark = normalizedTheme === "dark";
-    themeDarkBtn.classList.toggle("is-active", isDark);
-    themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+  if (themeToggleBtn) {
+    themeToggleBtn.setAttribute(
+      "aria-label",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute(
+      "title",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute("aria-pressed", String(normalizedTheme === "light"));
   }
-
-  if (themeLightBtn) {
-    const isLight = normalizedTheme === "light";
-    themeLightBtn.classList.toggle("is-active", isLight);
-    themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  if (themeToggleGlyph) {
+    themeToggleGlyph.textContent = normalizedTheme === "dark" ? "🌙" : "☀";
   }
 }
 
@@ -201,6 +209,12 @@ function setGraphStatus(message) {
   }
 }
 
+function setSettingsStatus(message) {
+  if (settingsStatusEl) {
+    settingsStatusEl.textContent = message;
+  }
+}
+
 function updateLastRefresh(sourceName) {
   if (!lastRefreshValueEl) {
     return;
@@ -211,7 +225,8 @@ function updateLastRefresh(sourceName) {
 }
 
 async function loadLinearSettings() {
-  if (!linearApiKeyInput || !linearTeamKeyInput || !window.monitor.linearSettings) {
+  if (!linearApiKeyInput || !linearTeamKeyInput || !window.monitor?.linearSettings) {
+    setSettingsStatus("Settings status: secure settings storage unavailable");
     return;
   }
 
@@ -219,20 +234,65 @@ async function loadLinearSettings() {
     const settings = await window.monitor.linearSettings.get();
     linearApiKeyInput.value = settings.apiKey || "";
     linearTeamKeyInput.value = settings.teamKey || "";
-    collapseGraphSettingsIfConfigured(settings.apiKey, settings.teamKey);
     if (settings.apiKey && settings.teamKey) {
+      setSettingsStatus(`Settings status: loaded saved settings for team ${settings.teamKey}`);
       await loadLinearIssuesFromInputs(true);
+      collapseGraphSettingsIfConfigured(settings.apiKey, settings.teamKey);
+      return;
     }
+    setSettingsStatus("Settings status: no saved connection settings found");
   } catch (error) {
-    setGraphStatus(`Graph status: could not load .env settings (${errorMessage(error)})`);
+    const message = errorMessage(error);
+    setSettingsStatus(`Settings status: could not load .env settings (${message})`);
+    setGraphStatus(`Graph status: could not load .env settings (${message})`);
+  }
+}
+
+async function saveLinearSettingsFromInputs() {
+  if (!linearSaveSettingsBtn || !graphLoadLinearBtn) {
+    return;
+  }
+
+  try {
+    const { apiKey, teamKey } = getValidatedLinearInputs();
+    linearSaveSettingsBtn.disabled = true;
+    graphLoadLinearBtn.disabled = true;
+    await persistLinearSettings(apiKey, teamKey);
+    setSettingsStatus(`Settings status: saved connection settings for ${teamKey}`);
+    collapseGraphSettingsIfConfigured(apiKey, teamKey);
+  } catch (error) {
+    setSettingsStatus(`Settings status: ${errorMessage(error)}`);
+  } finally {
+    linearSaveSettingsBtn.disabled = false;
+    graphLoadLinearBtn.disabled = false;
   }
 }
 
 async function persistLinearSettings(apiKey, teamKey) {
-  if (!window.monitor.linearSettings) {
-    return;
+  if (!window.monitor?.linearSettings) {
+    throw new Error("secure settings storage unavailable");
   }
   await window.monitor.linearSettings.save({ apiKey, teamKey });
+}
+
+function getValidatedLinearInputs() {
+  if (!linearApiKeyInput || !linearTeamKeyInput) {
+    throw new Error("settings form is unavailable");
+  }
+
+  const apiKey = linearApiKeyInput.value.trim();
+  const teamKey = linearTeamKeyInput.value.trim().toUpperCase();
+
+  if (!apiKey || !teamKey) {
+    throw new Error("enter API key and team key");
+  }
+
+  if (!/^[A-Z0-9_-]+$/.test(teamKey)) {
+    throw new Error("team key can contain only letters, numbers, hyphens, and underscores");
+  }
+
+  linearTeamKeyInput.value = teamKey;
+  return { apiKey, teamKey };
 }
 
 function collapseGraphSettingsIfConfigured(apiKey, teamKey) {
@@ -255,10 +315,16 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
     return;
   }
 
-  const apiKey = linearApiKeyInput.value.trim();
-  const teamKey = linearTeamKeyInput.value.trim().toUpperCase();
-  if (!apiKey || !teamKey) {
-    setGraphStatus("Graph status: enter API key and team key");
+  let apiKey = "";
+  let teamKey = "";
+  try {
+    const validated = getValidatedLinearInputs();
+    apiKey = validated.apiKey;
+    teamKey = validated.teamKey;
+  } catch (error) {
+    const message = errorMessage(error);
+    setSettingsStatus(`Settings status: ${message}`);
+    setGraphStatus(`Graph status: ${message}`);
     return;
   }
 
@@ -266,13 +332,18 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
   setGraphStatus(
     isAutoLoad ? "Graph status: auto-loading saved Linear issues..." : "Graph status: loading team..."
   );
+  setSettingsStatus("Settings status: loading issues with saved connection settings...");
   graphLoadLinearBtn.disabled = true;
+  if (linearSaveSettingsBtn) {
+    linearSaveSettingsBtn.disabled = true;
+  }
 
   try {
     await persistLinearSettings(apiKey, teamKey);
     const team = await getTeamByKey(apiKey, teamKey);
     if (!team) {
       setGraphStatus(`Graph status: team "${teamKey}" not found`);
+      setSettingsStatus(`Settings status: team "${teamKey}" not found`);
       return;
     }
     setGraphStatus(`Graph status: loading issues for ${team.name}...`);
@@ -280,12 +351,18 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
     await renderIssueGraph(issues);
     setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
     updateLastRefresh("Build Chart");
+    setSettingsStatus(`Settings status: saved and loaded ${issues.length} issues from ${team.key}`);
     collapseGraphSettingsIfConfigured(apiKey, teamKey);
   } catch (error) {
-    setGraphStatus(`Graph status: ${errorMessage(error)}`);
+    const message = errorMessage(error);
+    setGraphStatus(`Graph status: ${message}`);
+    setSettingsStatus(`Settings status: ${message}`);
   } finally {
     isGraphLoadInFlight = false;
     graphLoadLinearBtn.disabled = false;
+    if (linearSaveSettingsBtn) {
+      linearSaveSettingsBtn.disabled = false;
+    }
   }
 }
 
