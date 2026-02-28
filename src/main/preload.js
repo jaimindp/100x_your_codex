@@ -9,8 +9,15 @@ contextBridge.exposeInMainWorld("monitor", {
     get: () => ipcRenderer.invoke("theme-settings:get"),
     save: (settings) => ipcRenderer.invoke("theme-settings:save", settings)
   },
-  codexUsage: {
-    get: () => ipcRenderer.invoke("codex-usage:get"),
-    refresh: () => ipcRenderer.invoke("codex-usage:refresh")
+  githubRepos: {
+    getDefaultRoot: () => ipcRenderer.invoke("github-repos:get-default-root"),
+    scan: (payload) => ipcRenderer.invoke("github-repos:scan", payload)
+  },
+  monitorData: {
+    getDashboard: () => ipcRenderer.invoke("monitor-data:get-dashboard"),
+    runIngestion: () => ipcRenderer.invoke("monitor-data:run-ingestion")
+  },
+  mcpSkillTracking: {
+    getSnapshot: (options) => ipcRenderer.invoke("mcp-skill-tracking:get", options)
   }
 });
