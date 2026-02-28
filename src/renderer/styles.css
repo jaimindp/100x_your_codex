@@ -377,6 +377,16 @@ input {
   max-width: none;
 }
 
+.graph-output .nodeLabel p,
+.graph-output .label text {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.graph-output .edgeLabel {
+  font-size: 11px;
+}
+
 :root[data-theme="light"] .graph-output {
   background: linear-gradient(180deg, #fbfdff 0%, #eef4fc 100%);
 }

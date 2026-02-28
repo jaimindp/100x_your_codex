@@ -68,10 +68,11 @@ CODEX_BIN=/absolute/path/to/codex npm run start
   - Parent -> sub-issue relationships.
   - Blocker relationships (blocking issue -> blocked issue).
 - Graph layout is top-to-bottom (vertical) for easier DAG scanning.
+- Node labels are wrapped/truncated for readability on smaller viewports.
 - Navigation controls:
   - Drag in whitespace to pan.
   - Scroll to move through the graph canvas.
-  - `+`, `-`, and `%` buttons for zoom in/out/reset.
+  - `+`, `-`, and `%` buttons for zoom in/out/reset-to-fit.
   - `Ctrl/Cmd + mouse wheel` for pointer-anchored zoom.
 - The first successful `Load Linear Issues` saves `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` in a local `.env` file at the repo root, and these fields are auto-filled on next launch.
 - When saved credentials exist, the app automatically loads Linear issues on startup.

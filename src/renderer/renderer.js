@@ -8,10 +8,16 @@ const graphStatusEl = document.getElementById("graph-status");
 const settingsStatusEl = document.getElementById("settings-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
+const depMapStatusEl = document.getElementById("dep-map-status");
+const depMapOutputEl = document.getElementById("dep-map-output");
 const graphZoomInBtn = document.getElementById("graph-zoom-in");
 const graphZoomOutBtn = document.getElementById("graph-zoom-out");
 const graphZoomResetBtn = document.getElementById("graph-zoom-reset");
 const graphNavHintEl = document.getElementById("graph-nav-hint");
+const depMapZoomInBtn = document.getElementById("dep-map-zoom-in");
+const depMapZoomOutBtn = document.getElementById("dep-map-zoom-out");
+const depMapZoomResetBtn = document.getElementById("dep-map-zoom-reset");
+const depMapNavHintEl = document.getElementById("dep-map-nav-hint");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
@@ -23,8 +29,20 @@ const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]")
 let graphIssuesByNodeId = new Map();
 let isGraphLoadInFlight = false;
 let graphZoomLevel = 1;
+let graphDefaultZoomLevel = 1;
 let graphBaseSize = { width: 0, height: 0 };
 let graphPanState = {
+  active: false,
+  pointerId: null,
+  startX: 0,
+  startY: 0,
+  startScrollLeft: 0,
+  startScrollTop: 0
+};
+let depMapZoomLevel = 1;
+let depMapDefaultZoomLevel = 1;
+let depMapBaseSize = { width: 0, height: 0 };
+let depMapPanState = {
   active: false,
   pointerId: null,
   startX: 0,
@@ -39,6 +57,79 @@ const LINEAR_API_URL = "https://api.linear.app/graphql";
 const GRAPH_ZOOM_MIN = 0.4;
 const GRAPH_ZOOM_MAX = 2.2;
 const GRAPH_ZOOM_STEP = 0.15;
+const GRAPH_LABEL_WRAP_CHARS = 26;
+const GRAPH_LABEL_MAX_LINES = 3;
+const DEP_MAP_LABEL_MAX_LINES = 2;
+const DEPENDENCY_TASKS = [
+  { id: "H10", key: "hack-10", title: "app-db-and-ingestion-core", status: "inprog" },
+  { id: "H11", key: "hack-11", title: "usage-cost-dashboard", status: "blocked" },
+  { id: "H12", key: "hack-12", title: "timeline-git-health", status: "blocked" },
+  { id: "H13", key: "hack-13", title: "linear-env-persistence", status: "inprog" },
+  { id: "H14", key: "hack-14", title: "electron-cleanup", status: "inprog" },
+  { id: "H15", key: "hack-15", title: "linear-relation-graph", status: "blocked" },
+  { id: "H16", key: "hack-16", title: "graph-filters-and-export", status: "blocked" },
+  { id: "H17", key: "hack-17", title: "demo-polish-and-packaging", status: "blocked" },
+  { id: "H18", key: "hack-18", title: "mcp-and-skill-tracking", status: "blocked" },
+  { id: "H19", key: "hack-19", title: "live-sessions-and-credit-context", status: "blocked" },
+  { id: "H20", key: "hack-20", title: "worktree-and-dependency-map-tracking", status: "blocked" },
+  { id: "H21", key: "hack-21", title: "cross-view-correlation-and-polish", status: "blocked" },
+  { id: "H22", key: "hack-22", title: "video-creation", status: "blocked" },
+  { id: "H23", key: "hack-23", title: "demo-link-setup", status: "blocked" },
+  { id: "H24", key: "hack-24", title: "linear-graph-reliability-and-security", status: "blocked" },
+  { id: "H25", key: "hack-25", title: "app-shell-integration-and-shared-nav", status: "inprog" },
+  { id: "H26", key: "hack-26", title: "functional-test-pass", status: "blocked" },
+  { id: "H27", key: "hack-27", title: "regression-test-pass", status: "blocked" },
+  { id: "H28", key: "hack-28", title: "performance-target-validation", status: "blocked" },
+  { id: "H29", key: "hack-29", title: "submission-docs-and-packaging", status: "blocked" },
+  { id: "H30", key: "hack-30", title: "worktree-commit-timelines", status: "blocked" },
+  { id: "H31", key: "hack-31", title: "mcp-health", status: "blocked" },
+  { id: "H32", key: "hack-32", title: "linear-done-ticket-build-launch", status: "blocked" },
+  { id: "H33", key: "hack-33", title: "local-server-management", status: "blocked" },
+  { id: "H34", key: "hack-34", title: "dependency-map-interactive-navigation", status: "inprog" },
+  { id: "H35", key: "hack-35", title: "remove-linear-issue-graph-intro-text", status: "inprog" },
+  { id: "H36", key: "hack-36", title: "codex-model-and-cost-usage-tracking", status: "blocked" }
+];
+const DEPENDENCY_EDGES = [
+  ["H10", "H11"],
+  ["H10", "H12"],
+  ["H10", "H15"],
+  ["H10", "H18"],
+  ["H10", "H19"],
+  ["H10", "H20"],
+  ["H13", "H15"],
+  ["H14", "H12"],
+  ["H15", "H16"],
+  ["H16", "H24"],
+  ["H18", "H21"],
+  ["H19", "H21"],
+  ["H20", "H21"],
+  ["H16", "H21"],
+  ["H12", "H30"],
+  ["H20", "H30"],
+  ["H18", "H31"],
+  ["H23", "H32"],
+  ["H20", "H32"],
+  ["H10", "H33"],
+  ["H10", "H36"],
+  ["H14", "H33"],
+  ["H30", "H17"],
+  ["H31", "H17"],
+  ["H32", "H17"],
+  ["H33", "H17"],
+  ["H36", "H17"],
+  ["H24", "H25"],
+  ["H21", "H25"],
+  ["H11", "H17"],
+  ["H12", "H17"],
+  ["H25", "H17"],
+  ["H17", "H22"],
+  ["H22", "H23"],
+  ["H17", "H26"],
+  ["H26", "H27"],
+  ["H27", "H28"],
+  ["H23", "H29"],
+  ["H28", "H29"]
+];
 const SCREEN_META = {
   overview: {
     title: "Overview",
@@ -80,8 +171,10 @@ if (window.mermaid) {
     securityLevel: "loose",
     theme: "neutral",
     flowchart: {
-      curve: "basis",
-      defaultRenderer: "elk"
+      curve: "linear",
+      defaultRenderer: "dagre",
+      nodeSpacing: 18,
+      rankSpacing: 56
     }
   });
 }
@@ -97,6 +190,8 @@ window.onGraphNodeClick = (nodeId) => {
 initializeNavigation();
 initializeThemeControls();
 initializeGraphNavigationControls();
+initializeDependencyMapNavigationControls();
+renderDependencyMapGraph();
 
 if (graphLoadMockBtn) {
   graphLoadMockBtn.addEventListener("click", async () => {
@@ -233,6 +328,12 @@ function setSettingsStatus(message) {
   }
 }
 
+function setDepMapStatus(message) {
+  if (depMapStatusEl) {
+    depMapStatusEl.textContent = message;
+  }
+}
+
 function updateLastRefresh(sourceName) {
   if (!lastRefreshValueEl) {
     return;
@@ -240,6 +341,49 @@ function updateLastRefresh(sourceName) {
 
   const now = new Date();
   lastRefreshValueEl.textContent = `${now.toLocaleTimeString()} (${sourceName})`;
+}
+
+async function renderDependencyMapGraph() {
+  if (!window.mermaid || !depMapOutputEl) {
+    setDepMapStatus("Dependency map status: Mermaid is not loaded");
+    return;
+  }
+
+  setDepMapStatus("Dependency map status: rendering...");
+  try {
+    const graphText = buildDependencyMapMermaid();
+    const renderId = `dependency-map-${Date.now()}`;
+    const rendered = await window.mermaid.render(renderId, graphText);
+    depMapOutputEl.innerHTML = rendered.svg;
+    if (typeof rendered.bindFunctions === "function") {
+      rendered.bindFunctions(depMapOutputEl);
+    }
+    initializeDepMapZoomForRenderedSvg();
+    setDepMapStatus(
+      `Dependency map status: rendered ${DEPENDENCY_TASKS.length} tasks and ${DEPENDENCY_EDGES.length} dependencies`
+    );
+  } catch (error) {
+    setDepMapStatus(`Dependency map status: ${errorMessage(error)}`);
+  }
+}
+
+function buildDependencyMapMermaid() {
+  const lines = ["flowchart TB"];
+
+  DEPENDENCY_TASKS.forEach((task) => {
+    const wrappedTitle = wrapLabelText(task.title, GRAPH_LABEL_WRAP_CHARS, DEP_MAP_LABEL_MAX_LINES);
+    lines.push(`${task.id}["${sanitizeLabel(`${task.key}<br/>${wrappedTitle}`)}"]:::${task.status}`);
+  });
+
+  DEPENDENCY_EDGES.forEach(([source, target]) => {
+    lines.push(`${source} --> ${target}`);
+  });
+
+  lines.push("classDef todo fill:#e2e3e5,stroke:#6c757d,color:#343a40");
+  lines.push("classDef inprog fill:#fff3cd,stroke:#b58900,color:#664d03");
+  lines.push("classDef done fill:#d7f7e3,stroke:#1e8e3e,color:#0f5132");
+  lines.push("classDef blocked fill:#f8d7da,stroke:#b02a37,color:#58151c");
+  return lines.join("\n");
 }
 
 async function loadLinearSettings() {
@@ -412,15 +556,16 @@ async function renderIssueGraph(issues) {
 }
 
 function buildMermaidFlowchart(issues) {
-  const lines = ["flowchart TD"];
+  const lines = ["flowchart TB"];
   const issueMap = new Map();
   const drawnEdges = new Set();
 
   issues.forEach((issue, index) => {
     const nodeId = `I${index + 1}`;
     const className = issue.state?.type === "completed" ? "done" : "active";
+    const nodeLabel = formatIssueNodeLabel(issue);
     issueMap.set(nodeId, issue);
-    lines.push(`${nodeId}["${sanitizeLabel(`${issue.identifier}: ${issue.title}`)}"]:::${className}`);
+    lines.push(`${nodeId}["${sanitizeLabel(nodeLabel)}"]:::${className}`);
     lines.push(`click ${nodeId} onGraphNodeClick "Open issue details"`);
   });
 
@@ -536,6 +681,81 @@ function priorityLabel(priority) {
 
 function sanitizeLabel(value) {
   return String(value).replace(/"/g, "'").replace(/\n/g, " ");
+}
+
+function formatIssueNodeLabel(issue) {
+  const identifier = String(issue?.identifier || "ISSUE").trim();
+  const title = String(issue?.title || "Untitled").trim();
+  const wrappedTitle = wrapLabelText(title, GRAPH_LABEL_WRAP_CHARS, GRAPH_LABEL_MAX_LINES);
+  return `${identifier}<br/>${wrappedTitle}`;
+}
+
+function wrapLabelText(inputText, maxCharsPerLine, maxLines) {
+  const words = String(inputText || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean);
+  if (!words.length) {
+    return "Untitled";
+  }
+
+  const lines = [];
+  let currentLine = "";
+  const pushLine = (line) => {
+    if (line) {
+      lines.push(line);
+    }
+  };
+
+  for (const word of words) {
+    if (lines.length >= maxLines) {
+      break;
+    }
+
+    if (word.length > maxCharsPerLine) {
+      if (currentLine) {
+        pushLine(currentLine);
+        currentLine = "";
+      }
+      let index = 0;
+      while (index < word.length && lines.length < maxLines) {
+        const chunk = word.slice(index, index + maxCharsPerLine);
+        const isTail = index + maxCharsPerLine >= word.length;
+        if (!isTail && lines.length + 1 === maxLines) {
+          lines.push(`${chunk.slice(0, Math.max(1, maxCharsPerLine - 1))}…`);
+          index = word.length;
+          break;
+        }
+        lines.push(chunk);
+        index += maxCharsPerLine;
+      }
+      continue;
+    }
+
+    const candidate = currentLine ? `${currentLine} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      currentLine = candidate;
+      continue;
+    }
+
+    pushLine(currentLine);
+    currentLine = word;
+  }
+
+  if (lines.length < maxLines) {
+    pushLine(currentLine);
+  }
+
+  const didTruncate = lines.length >= maxLines && words.join(" ").length > lines.join(" ").length;
+  if (didTruncate) {
+    const lastIndex = lines.length - 1;
+    if (lastIndex >= 0 && !lines[lastIndex].endsWith("…")) {
+      lines[lastIndex] = `${lines[lastIndex].slice(0, Math.max(1, maxCharsPerLine - 1))}…`;
+    }
+  }
+
+  return lines.slice(0, maxLines).join("<br/>");
 }
 
 function escapeHtml(value) {
@@ -740,7 +960,7 @@ function initializeGraphNavigationControls() {
     graphZoomOutBtn.addEventListener("click", () => setGraphZoom(graphZoomLevel - GRAPH_ZOOM_STEP));
   }
   if (graphZoomResetBtn) {
-    graphZoomResetBtn.addEventListener("click", () => setGraphZoom(1));
+    graphZoomResetBtn.addEventListener("click", () => setGraphZoom(graphDefaultZoomLevel));
   }
 
   if (!graphOutputEl) {
@@ -760,16 +980,18 @@ function initializeGraphZoomForRenderedSvg() {
   if (!svg || !graphOutputEl) {
     graphBaseSize = { width: 0, height: 0 };
     graphZoomLevel = 1;
+    graphDefaultZoomLevel = 1;
     updateGraphZoomControls();
     return;
   }
 
   const baseSize = computeGraphBaseSize(svg);
   graphBaseSize = baseSize;
-  graphZoomLevel = 1;
+  graphDefaultZoomLevel = computeGraphFitZoom(baseSize, graphOutputEl);
+  graphZoomLevel = graphDefaultZoomLevel;
   applyGraphZoom();
   graphOutputEl.scrollTop = 0;
-  graphOutputEl.scrollLeft = Math.max(0, (baseSize.width - graphOutputEl.clientWidth) / 2);
+  graphOutputEl.scrollLeft = 0;
 }
 
 function computeGraphBaseSize(svg) {
@@ -795,6 +1017,16 @@ function computeGraphBaseSize(svg) {
     width: Math.max(1, bounds.width || 1200),
     height: Math.max(1, bounds.height || 700)
   };
+}
+
+function computeGraphFitZoom(baseSize, outputEl) {
+  if (!outputEl || !baseSize.width) {
+    return 1;
+  }
+  const horizontalPadding = 22;
+  const availableWidth = Math.max(1, outputEl.clientWidth - horizontalPadding);
+  const widthFitZoom = availableWidth / baseSize.width;
+  return clampGraphZoom(Math.min(1, widthFitZoom));
 }
 
 function getGraphSvg() {
@@ -937,4 +1169,180 @@ function onGraphWheel(event) {
   const anchorY = event.clientY - rect.top;
   const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
   setGraphZoom(graphZoomLevel * scaleDirection, { anchorX, anchorY });
+}
+
+function initializeDependencyMapNavigationControls() {
+  updateDepMapZoomControls();
+
+  if (depMapZoomInBtn) {
+    depMapZoomInBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel + GRAPH_ZOOM_STEP));
+  }
+  if (depMapZoomOutBtn) {
+    depMapZoomOutBtn.addEventListener("click", () => setDepMapZoom(depMapZoomLevel - GRAPH_ZOOM_STEP));
+  }
+  if (depMapZoomResetBtn) {
+    depMapZoomResetBtn.addEventListener("click", () => setDepMapZoom(depMapDefaultZoomLevel));
+  }
+
+  if (!depMapOutputEl) {
+    return;
+  }
+
+  depMapOutputEl.addEventListener("pointerdown", onDepMapPointerDown);
+  depMapOutputEl.addEventListener("pointermove", onDepMapPointerMove);
+  depMapOutputEl.addEventListener("pointerup", onDepMapPointerUp);
+  depMapOutputEl.addEventListener("pointercancel", stopDepMapPanning);
+  depMapOutputEl.addEventListener("lostpointercapture", stopDepMapPanning);
+  depMapOutputEl.addEventListener("wheel", onDepMapWheel, { passive: false });
+}
+
+function initializeDepMapZoomForRenderedSvg() {
+  const svg = getDepMapSvg();
+  if (!svg || !depMapOutputEl) {
+    depMapBaseSize = { width: 0, height: 0 };
+    depMapZoomLevel = 1;
+    depMapDefaultZoomLevel = 1;
+    updateDepMapZoomControls();
+    return;
+  }
+
+  const baseSize = computeGraphBaseSize(svg);
+  depMapBaseSize = baseSize;
+  depMapDefaultZoomLevel = computeGraphFitZoom(baseSize, depMapOutputEl);
+  depMapZoomLevel = depMapDefaultZoomLevel;
+  applyDepMapZoom();
+  depMapOutputEl.scrollTop = 0;
+  depMapOutputEl.scrollLeft = 0;
+}
+
+function getDepMapSvg() {
+  if (!depMapOutputEl) {
+    return null;
+  }
+  return depMapOutputEl.querySelector("svg");
+}
+
+function applyDepMapZoom() {
+  const svg = getDepMapSvg();
+  if (!svg || !depMapBaseSize.width || !depMapBaseSize.height) {
+    updateDepMapZoomControls();
+    return;
+  }
+
+  svg.style.width = `${Math.round(depMapBaseSize.width * depMapZoomLevel)}px`;
+  svg.style.height = `${Math.round(depMapBaseSize.height * depMapZoomLevel)}px`;
+  updateDepMapZoomControls();
+}
+
+function setDepMapZoom(nextZoom, options = {}) {
+  if (!depMapOutputEl) {
+    return;
+  }
+
+  const clampedZoom = clampGraphZoom(nextZoom);
+  const previousZoom = depMapZoomLevel;
+  if (Math.abs(clampedZoom - previousZoom) < 0.001) {
+    updateDepMapZoomControls();
+    return;
+  }
+
+  const anchorX =
+    typeof options.anchorX === "number" ? options.anchorX : depMapOutputEl.clientWidth / 2;
+  const anchorY =
+    typeof options.anchorY === "number" ? options.anchorY : depMapOutputEl.clientHeight / 2;
+  const contentX = (depMapOutputEl.scrollLeft + anchorX) / previousZoom;
+  const contentY = (depMapOutputEl.scrollTop + anchorY) / previousZoom;
+
+  depMapZoomLevel = clampedZoom;
+  applyDepMapZoom();
+
+  depMapOutputEl.scrollLeft = Math.max(0, contentX * depMapZoomLevel - anchorX);
+  depMapOutputEl.scrollTop = Math.max(0, contentY * depMapZoomLevel - anchorY);
+}
+
+function updateDepMapZoomControls() {
+  const hasRenderedGraph = Boolean(getDepMapSvg());
+  const zoomPercent = `${Math.round(depMapZoomLevel * 100)}%`;
+
+  if (depMapZoomResetBtn) {
+    depMapZoomResetBtn.textContent = zoomPercent;
+    depMapZoomResetBtn.disabled = !hasRenderedGraph;
+  }
+  if (depMapZoomInBtn) {
+    depMapZoomInBtn.disabled = !hasRenderedGraph || depMapZoomLevel >= GRAPH_ZOOM_MAX;
+  }
+  if (depMapZoomOutBtn) {
+    depMapZoomOutBtn.disabled = !hasRenderedGraph || depMapZoomLevel <= GRAPH_ZOOM_MIN;
+  }
+  if (depMapNavHintEl) {
+    depMapNavHintEl.textContent = hasRenderedGraph
+      ? `Zoom ${zoomPercent}. Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.`
+      : "Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.";
+  }
+}
+
+function onDepMapPointerDown(event) {
+  if (!depMapOutputEl || event.button !== 0 || !getDepMapSvg()) {
+    return;
+  }
+  depMapPanState = {
+    active: true,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    startScrollLeft: depMapOutputEl.scrollLeft,
+    startScrollTop: depMapOutputEl.scrollTop
+  };
+  depMapOutputEl.classList.add("is-panning");
+  depMapOutputEl.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+function onDepMapPointerMove(event) {
+  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
+    return;
+  }
+
+  const deltaX = event.clientX - depMapPanState.startX;
+  const deltaY = event.clientY - depMapPanState.startY;
+  depMapOutputEl.scrollLeft = depMapPanState.startScrollLeft - deltaX;
+  depMapOutputEl.scrollTop = depMapPanState.startScrollTop - deltaY;
+}
+
+function onDepMapPointerUp(event) {
+  if (!depMapOutputEl || !depMapPanState.active || depMapPanState.pointerId !== event.pointerId) {
+    return;
+  }
+  stopDepMapPanning();
+}
+
+function stopDepMapPanning() {
+  if (!depMapOutputEl || !depMapPanState.active) {
+    return;
+  }
+  if (
+    depMapPanState.pointerId !== null &&
+    depMapOutputEl.hasPointerCapture(depMapPanState.pointerId)
+  ) {
+    depMapOutputEl.releasePointerCapture(depMapPanState.pointerId);
+  }
+  depMapPanState.active = false;
+  depMapPanState.pointerId = null;
+  depMapOutputEl.classList.remove("is-panning");
+}
+
+function onDepMapWheel(event) {
+  if (!depMapOutputEl || !getDepMapSvg()) {
+    return;
+  }
+  if (!event.ctrlKey && !event.metaKey) {
+    return;
+  }
+
+  event.preventDefault();
+  const rect = depMapOutputEl.getBoundingClientRect();
+  const anchorX = event.clientX - rect.left;
+  const anchorY = event.clientY - rect.top;
+  const scaleDirection = event.deltaY < 0 ? 1 + GRAPH_ZOOM_STEP : 1 - GRAPH_ZOOM_STEP;
+  setDepMapZoom(depMapZoomLevel * scaleDirection, { anchorX, anchorY });
 }
