@@ -6,11 +6,74 @@ const graphControlsPanel = document.getElementById("graph-controls-panel");
 const graphStatusEl = document.getElementById("graph-status");
 const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
+const screenTitleEl = document.getElementById("screen-title");
+const screenSubtitleEl = document.getElementById("screen-subtitle");
+const lastRefreshValueEl = document.getElementById("last-refresh-value");
+const themeDarkBtn = document.getElementById("theme-dark-btn");
+const themeLightBtn = document.getElementById("theme-light-btn");
+const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
+const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
 let graphIssuesByNodeId = new Map();
 let isGraphLoadInFlight = false;
+let currentScreenId = "overview";
+let currentTheme = "dark";
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
+const SCREEN_META = {
+  overview: {
+    title: "Overview",
+    subtitle: "Shared app shell and cross-screen navigation."
+  },
+  timeline: {
+    title: "Timeline",
+    subtitle: "Session and event history."
+  },
+  "live-sessions": {
+    title: "Live Sessions",
+    subtitle: "Active sessions and status."
+  },
+  usage: {
+    title: "Usage",
+    subtitle: "Usage and cost visibility."
+  },
+  "credits-context": {
+    title: "Credits + Context",
+    subtitle: "Rate limits and context pressure."
+  },
+  "mcp-skills": {
+    title: "MCP + Skills",
+    subtitle: "Tool/server usage and skill activity."
+  },
+  "git-worktrees": {
+    title: "Git + Worktrees",
+    subtitle: "Branch/worktree health."
+  },
+  "dependency-map": {
+    title: "Dependency Map",
+    subtitle: "Task DAG and delivery status."
+  },
+  "linear-graph": {
+    title: "Linear Graph",
+    subtitle: "Parent/sub-issue and blocker relationships."
+  },
+  health: {
+    title: "Health",
+    subtitle: "Operational reliability signals."
+  },
+  settings: {
+    title: "Settings",
+    subtitle: "Runtime configuration."
+  },
+  "build-snapshots": {
+    title: "Build Snapshots",
+    subtitle: "Local build snapshot launch points."
+  },
+  "server-manager": {
+    title: "Server Manager",
+    subtitle: "Managed local server controls."
+  }
+};
 
 if (window.mermaid) {
   window.mermaid.initialize({
@@ -32,6 +95,9 @@ window.onGraphNodeClick = (nodeId) => {
   renderGraphDetails(issue);
 };
 
+initializeNavigation();
+initializeThemeControls();
+
 if (graphLoadMockBtn) {
   graphLoadMockBtn.addEventListener("click", async () => {
     setGraphStatus("Graph status: rendering mock data...");
@@ -39,6 +105,7 @@ if (graphLoadMockBtn) {
       const issues = getMockIssues();
       await renderIssueGraph(issues);
       setGraphStatus(`Graph status: rendered ${issues.length} mock issues`);
+      updateLastRefresh("Linear Graph (mock)");
     } catch (error) {
       setGraphStatus(`Graph status: ${errorMessage(error)}`);
     }
@@ -51,10 +118,116 @@ if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
 
 loadLinearSettings();
 
+function initializeThemeControls() {
+  if (themeDarkBtn) {
+    themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
+  }
+  if (themeLightBtn) {
+    themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+  }
+
+  loadThemeSettings();
+}
+
+async function loadThemeSettings() {
+  if (!window.monitor?.themeSettings) {
+    applyTheme("dark");
+    return;
+  }
+
+  try {
+    const settings = await window.monitor.themeSettings.get();
+    applyTheme(settings?.theme || "dark");
+  } catch (error) {
+    applyTheme("dark");
+    console.warn("Theme settings load failed:", errorMessage(error));
+  }
+}
+
+async function setThemePreference(theme) {
+  const normalizedTheme = normalizeTheme(theme);
+  applyTheme(normalizedTheme);
+
+  if (!window.monitor?.themeSettings) {
+    return;
+  }
+
+  try {
+    await window.monitor.themeSettings.save({ theme: normalizedTheme });
+  } catch (error) {
+    setGraphStatus(`Graph status: could not save theme (${errorMessage(error)})`);
+  }
+}
+
+function normalizeTheme(theme) {
+  return theme === "light" ? "light" : "dark";
+}
+
+function applyTheme(theme) {
+  const normalizedTheme = normalizeTheme(theme);
+  currentTheme = normalizedTheme;
+  document.documentElement.setAttribute("data-theme", normalizedTheme);
+
+  if (themeDarkBtn) {
+    const isDark = normalizedTheme === "dark";
+    themeDarkBtn.classList.toggle("is-active", isDark);
+    themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+  }
+
+  if (themeLightBtn) {
+    const isLight = normalizedTheme === "light";
+    themeLightBtn.classList.toggle("is-active", isLight);
+    themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  }
+}
+
+function initializeNavigation() {
+  navButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const targetScreen = button.dataset.screen;
+      if (!targetScreen) {
+        return;
+      }
+      setActiveScreen(targetScreen);
+    });
+  });
+
+  setActiveScreen(currentScreenId);
+}
+
+function setActiveScreen(screenId) {
+  currentScreenId = screenId;
+  navButtons.forEach((button) => {
+    const isActive = button.dataset.screen === screenId;
+    button.classList.toggle("is-active", isActive);
+    button.setAttribute("aria-current", isActive ? "page" : "false");
+  });
+
+  screenPanels.forEach((panel) => {
+    const isActive = panel.dataset.screenPanel === screenId;
+    panel.classList.toggle("is-active", isActive);
+  });
+
+  const meta = SCREEN_META[screenId];
+  if (meta && screenTitleEl && screenSubtitleEl) {
+    screenTitleEl.textContent = meta.title;
+    screenSubtitleEl.textContent = meta.subtitle;
+  }
+}
+
 function setGraphStatus(message) {
   if (graphStatusEl) {
     graphStatusEl.textContent = message;
   }
+}
+
+function updateLastRefresh(sourceName) {
+  if (!lastRefreshValueEl) {
+    return;
+  }
+
+  const now = new Date();
+  lastRefreshValueEl.textContent = `${now.toLocaleTimeString()} (${sourceName})`;
 }
 
 async function loadLinearSettings() {
@@ -126,6 +299,7 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
     const issues = await getTeamIssues(apiKey, team.id);
     await renderIssueGraph(issues);
     setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
+    updateLastRefresh("Linear Graph");
     collapseGraphSettingsIfConfigured(apiKey, teamKey);
   } catch (error) {
     setGraphStatus(`Graph status: ${errorMessage(error)}`);
