@@ -278,9 +278,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
-  monitorDataService = createMonitorDataService({
-    userDataPath: app.getPath("userData")
-  });
+  monitorDataService = createMonitorDataService();
   ipcMain.handle("linear-settings:get", () => getLinearSettings());
   ipcMain.handle("linear-settings:save", (_event, settings) =>
     saveLinearSettings(settings?.apiKey, settings?.teamKey)
@@ -301,8 +299,6 @@ app.whenReady().then(() => {
     monitorDataService ? monitorDataService.runIngestion() : null
   );
 
-  // Prime the local-first cache on launch so dashboard panels have fresh telemetry.
-  monitorDataService.runIngestion();
   createWindow();
 
   app.on("activate", () => {
