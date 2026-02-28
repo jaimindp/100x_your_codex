@@ -48,13 +48,33 @@
         <main class="screen-panel is-active" data-screen-panel="overview">
           <div class="card">
             <h3>Overview</h3>
-            <p>Use the left navigation to switch monitor views. This app shell now keeps navigation and header status shared across screens.</p>
+            <p>
+              Use the left navigation to switch monitor views. This app shell keeps navigation and
+              header status shared across screens.
+            </p>
           </div>
         </main>
 
         <main class="screen-panel" data-screen-panel="build-chart">
           <div class="card">
-            <h3>Build Chart</h3>
+            <h3>Dependency Map</h3>
+            <p>Interactive task DAG with dependency-first navigation.</p>
+            <p id="dep-map-status">Dependency map status: rendering...</p>
+            <div class="graph-toolbar">
+              <div class="row graph-zoom-controls">
+                <button id="dep-map-zoom-out" type="button" aria-label="Zoom out dependency map">-</button>
+                <button id="dep-map-zoom-reset" type="button" aria-label="Reset dependency map zoom">100%</button>
+                <button id="dep-map-zoom-in" type="button" aria-label="Zoom in dependency map">+</button>
+              </div>
+              <span id="dep-map-nav-hint" class="graph-nav-hint" aria-live="polite"
+                >Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.</span
+              >
+            </div>
+            <div id="dep-map-output" class="graph-output"></div>
+          </div>
+
+          <div class="card">
+            <h3>Linear Issue Graph</h3>
             <p>Interactive Mermaid DAG for Linear issues inside this Electron app.</p>
             <details id="graph-controls-panel" class="graph-controls-panel" open>
               <summary>Connection Settings</summary>
@@ -75,6 +95,16 @@
             <div class="graph-shell">
               <section>
                 <h3>Graph</h3>
+                <div class="graph-toolbar">
+                  <div class="row graph-zoom-controls">
+                    <button id="graph-zoom-out" type="button" aria-label="Zoom out graph">-</button>
+                    <button id="graph-zoom-reset" type="button" aria-label="Reset graph zoom">100%</button>
+                    <button id="graph-zoom-in" type="button" aria-label="Zoom in graph">+</button>
+                  </div>
+                  <span id="graph-nav-hint" class="graph-nav-hint" aria-live="polite"
+                    >Drag to pan. Scroll to navigate. Ctrl/Cmd + wheel to zoom.</span
+                  >
+                </div>
                 <div id="graph-output" class="graph-output"></div>
               </section>
               <section>
@@ -84,24 +114,30 @@
             </div>
           </div>
         </main>
+
         <main class="screen-panel" data-screen-panel="agents">
           <div class="card"><h3>Agents</h3><p>Agents panel placeholder.</p></div>
         </main>
+
         <main class="screen-panel" data-screen-panel="usage">
           <div class="card">
             <h3>Usage</h3>
             <p>Usage dashboard placeholder, including timeline and credits/context signals.</p>
           </div>
         </main>
+
         <main class="screen-panel" data-screen-panel="mcp-skills">
           <div class="card"><h3>MCP + Skills</h3><p>MCP and skills placeholder.</p></div>
         </main>
+
         <main class="screen-panel" data-screen-panel="git-worktrees">
           <div class="card"><h3>Git + Worktrees</h3><p>Git and worktree health placeholder.</p></div>
         </main>
+
         <main class="screen-panel" data-screen-panel="health">
           <div class="card"><h3>Health</h3><p>Health panel placeholder.</p></div>
         </main>
+
         <main class="screen-panel" data-screen-panel="settings">
           <div class="card"><h3>Settings</h3><p>Settings placeholder.</p></div>
         </main>
