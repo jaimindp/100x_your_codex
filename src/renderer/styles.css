@@ -94,6 +94,8 @@ h3 {
   display: grid;
   gap: 7px;
   flex: 1;
+  align-content: start;
+  grid-auto-rows: max-content;
 }
 
 .nav-btn {
@@ -1303,6 +1305,44 @@ textarea {
 .mcp-list-item:last-child {
   border-bottom: 0;
   padding-bottom: 0;
+}
+
+.mcp-chart-empty {
+  margin: 0;
+  color: var(--muted);
+}
+
+.mcp-hourly-chart {
+  display: grid;
+  gap: 7px;
+}
+
+.mcp-bar-row {
+  display: grid;
+  grid-template-columns: 112px 1fr 52px;
+  align-items: center;
+  gap: 8px;
+}
+
+.mcp-bar-label,
+.mcp-bar-value {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.mcp-bar-track {
+  background: rgba(81, 126, 209, 0.16);
+  border: 1px solid rgba(90, 140, 230, 0.24);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.mcp-bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #4fa3ff 0%, #6ee7c8 100%);
 }
 
 .mcp-item-key {

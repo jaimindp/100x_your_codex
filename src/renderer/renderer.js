@@ -884,6 +884,8 @@ function renderMcpSnapshot(snapshot) {
   }
   const windowDays = Number(snapshot?.days || snapshot?.windowDays || MCP_DEFAULT_DAYS);
 
+  const windowDays = Number(snapshot?.days || snapshot?.windowDays || MCP_DEFAULT_DAYS);
+
   renderMcpList(mcpSummaryEl, [
     { label: "Window", value: `${windowDays} day(s)` },
     { label: "Files scanned", value: snapshot.filesScanned },
