@@ -64,6 +64,63 @@ function getThemeSettingsPath() {
   return path.join(app.getPath("userData"), "theme-settings.json");
 }
 
+function getGithubDiscoveryDefaultRoot() {
+  return path.join(os.homedir(), "Documents");
+}
+
+function normalizeDiscoveryRoot(rawRoot) {
+  const input = String(rawRoot || "").trim();
+  if (!input) {
+    return "";
+  }
+
+  if (input === "~") {
+    return os.homedir();
+  }
+
+  if (input.startsWith("~/")) {
+    return path.join(os.homedir(), input.slice(2));
+  }
+
+  return path.resolve(input);
+}
+
+function getValidatedDiscoveryRoots(payload) {
+  const rawRoots = Array.isArray(payload?.roots) ? payload.roots : [];
+  const normalized = [];
+  const seen = new Set();
+
+  rawRoots.forEach((rawRoot) => {
+    const rootPath = normalizeDiscoveryRoot(rawRoot);
+    if (!rootPath || seen.has(rootPath)) {
+      return;
+    }
+    seen.add(rootPath);
+    normalized.push(rootPath);
+  });
+
+  if (normalized.length === 0) {
+    return [getGithubDiscoveryDefaultRoot()];
+  }
+
+  if (normalized.length > 10) {
+    throw new Error("Use at most 10 scan roots per request.");
+  }
+
+  normalized.forEach((rootPath) => {
+    try {
+      const stats = fsSync.statSync(rootPath);
+      if (!stats.isDirectory()) {
+        throw new Error();
+      }
+    } catch {
+      throw new Error(`Scan root does not exist or is not a directory: ${rootPath}`);
+    }
+  });
+
+  return normalized;
+}
+
 function getCodexHomePath() {
   return process.env.CODEX_HOME || path.join(os.homedir(), ".codex");
 }

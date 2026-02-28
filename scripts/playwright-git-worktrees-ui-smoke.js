@@ -40,7 +40,7 @@ async function main() {
       if (!text.startsWith("git scan status:")) {
         return false;
       }
-      return !text.includes("idle") && !text.includes("scanning local repositories");
+      return text.includes("completed") || text.includes("error");
     }, null, { timeout: 120000 });
 
     const status = (await page.locator("#github-scan-status").textContent()) || "";
