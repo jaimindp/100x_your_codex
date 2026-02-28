@@ -8,6 +8,7 @@ It also includes an interactive Mermaid-based Linear issue DAG view.
 ```text
 .
 ├── package.json
+├── DEPENDENCY_MAP.md
 └── src
     ├── main
     │   ├── main.js
@@ -17,6 +18,11 @@ It also includes an interactive Mermaid-based Linear issue DAG view.
         ├── renderer.js
         └── styles.css
 ```
+
+## Planning + Tracking
+
+- Dependency ordering and task status live in [`DEPENDENCY_MAP.md`](./DEPENDENCY_MAP.md).
+- Workspace worktree operations are documented in `../WORKTREE.md`.
 
 ## Getting started
 
@@ -45,6 +51,7 @@ CODEX_BIN=/absolute/path/to/codex npm run start
     - `Team Key` (example: `ENG`)
 - Nodes are clickable and show issue details in the right panel.
 - The first successful `Load Linear Issues` saves `LINEAR_API_KEY` and `LINEAR_TEAM_KEY` in a local `.env` file at the repo root, and these fields are auto-filled on next launch.
+- When saved credentials exist, the app automatically loads Linear issues on startup.
 - Connection settings are in an expandable panel and auto-collapse when saved credentials are detected, so the graph stays in focus.
 
 Notes:

@@ -8,6 +8,7 @@ const graphOutputEl = document.getElementById("graph-output");
 const graphDetailsEl = document.getElementById("graph-details");
 
 let graphIssuesByNodeId = new Map();
+let isGraphLoadInFlight = false;
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 
@@ -45,35 +46,7 @@ if (graphLoadMockBtn) {
 }
 
 if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
-  graphLoadLinearBtn.addEventListener("click", async () => {
-    const apiKey = linearApiKeyInput.value.trim();
-    const teamKey = linearTeamKeyInput.value.trim().toUpperCase();
-
-    if (!apiKey || !teamKey) {
-      setGraphStatus("Graph status: enter API key and team key");
-      return;
-    }
-
-    setGraphStatus("Graph status: loading team...");
-    graphLoadLinearBtn.disabled = true;
-    try {
-      await persistLinearSettings(apiKey, teamKey);
-      const team = await getTeamByKey(apiKey, teamKey);
-      if (!team) {
-        setGraphStatus(`Graph status: team "${teamKey}" not found`);
-        return;
-      }
-      setGraphStatus(`Graph status: loading issues for ${team.name}...`);
-      const issues = await getTeamIssues(apiKey, team.id);
-      await renderIssueGraph(issues);
-      setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
-      collapseGraphSettingsIfConfigured(apiKey, teamKey);
-    } catch (error) {
-      setGraphStatus(`Graph status: ${errorMessage(error)}`);
-    } finally {
-      graphLoadLinearBtn.disabled = false;
-    }
-  });
+  graphLoadLinearBtn.addEventListener("click", () => loadLinearIssuesFromInputs(false));
 }
 
 loadLinearSettings();
@@ -94,6 +67,9 @@ async function loadLinearSettings() {
     linearApiKeyInput.value = settings.apiKey || "";
     linearTeamKeyInput.value = settings.teamKey || "";
     collapseGraphSettingsIfConfigured(settings.apiKey, settings.teamKey);
+    if (settings.apiKey && settings.teamKey) {
+      await loadLinearIssuesFromInputs(true);
+    }
   } catch (error) {
     setGraphStatus(`Graph status: could not load .env settings (${errorMessage(error)})`);
   }
@@ -115,6 +91,47 @@ function collapseGraphSettingsIfConfigured(apiKey, teamKey) {
   const hasTeamKey = Boolean(String(teamKey || "").trim());
   if (hasApiKey && hasTeamKey) {
     graphControlsPanel.open = false;
+  }
+}
+
+async function loadLinearIssuesFromInputs(isAutoLoad) {
+  if (!graphLoadLinearBtn || !linearApiKeyInput || !linearTeamKeyInput) {
+    return;
+  }
+  if (isGraphLoadInFlight) {
+    return;
+  }
+
+  const apiKey = linearApiKeyInput.value.trim();
+  const teamKey = linearTeamKeyInput.value.trim().toUpperCase();
+  if (!apiKey || !teamKey) {
+    setGraphStatus("Graph status: enter API key and team key");
+    return;
+  }
+
+  isGraphLoadInFlight = true;
+  setGraphStatus(
+    isAutoLoad ? "Graph status: auto-loading saved Linear issues..." : "Graph status: loading team..."
+  );
+  graphLoadLinearBtn.disabled = true;
+
+  try {
+    await persistLinearSettings(apiKey, teamKey);
+    const team = await getTeamByKey(apiKey, teamKey);
+    if (!team) {
+      setGraphStatus(`Graph status: team "${teamKey}" not found`);
+      return;
+    }
+    setGraphStatus(`Graph status: loading issues for ${team.name}...`);
+    const issues = await getTeamIssues(apiKey, team.id);
+    await renderIssueGraph(issues);
+    setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
+    collapseGraphSettingsIfConfigured(apiKey, teamKey);
+  } catch (error) {
+    setGraphStatus(`Graph status: ${errorMessage(error)}`);
+  } finally {
+    isGraphLoadInFlight = false;
+    graphLoadLinearBtn.disabled = false;
   }
 }
 
