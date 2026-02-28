@@ -735,6 +735,108 @@ input {
   line-height: 1.45;
 }
 
+.mcp-skills-header h3 {
+  margin: 0;
+}
+
+.mcp-skills-header p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.mcp-controls {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: minmax(120px, 180px) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.mcp-controls label {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.mcp-controls input {
+  margin-top: 0;
+}
+
+.mcp-status {
+  margin: 12px 0 4px;
+  padding: 8px 10px;
+  border: 1px solid #2e425c;
+  border-radius: 10px;
+  font-size: 0.92rem;
+  background: rgba(12, 19, 29, 0.72);
+}
+
+.mcp-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.mcp-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mcp-panel {
+  margin-top: 12px;
+  border: 1px solid #2a3d55;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(14, 22, 33, 0.82) 0%, rgba(9, 16, 24, 0.9) 100%);
+  padding: 12px;
+}
+
+.mcp-panel h4 {
+  margin: 0 0 10px;
+}
+
+.mcp-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-list-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+  border-bottom: 1px dashed #2a3d55;
+  padding-bottom: 7px;
+}
+
+.mcp-list-item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.mcp-item-key {
+  color: var(--muted);
+}
+
+.mcp-item-value {
+  font-weight: 600;
+}
+
+:root[data-theme="light"] .mcp-status {
+  border-color: #cad9ea;
+  background: rgba(245, 249, 255, 0.82);
+}
+
+:root[data-theme="light"] .mcp-panel {
+  border-color: #d2deed;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.92) 0%, rgba(244, 249, 255, 0.95) 100%);
+}
+
+:root[data-theme="light"] .mcp-list-item {
+  border-bottom-color: #d2deed;
+}
+
 @media (max-width: 980px) {
   .shell {
     grid-template-columns: 1fr;
@@ -767,5 +869,13 @@ input {
   .graph-toolbar {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .mcp-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .mcp-grid {
+    grid-template-columns: 1fr;
   }
 }

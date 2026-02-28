@@ -13,7 +13,7 @@ It now includes a local SQLite-backed ingestion core for Codex JSONL telemetry.
   - Dark/Light theme toggle with persisted preference.
 - Current screens in nav:
   - Overview, Build Chart, Agents, Usage, MCP + Skills, Git + Worktrees, Health, Settings.
-- `Build Chart` is the functional graph screen; non-graph screens are scaffolded placeholders.
+- `Build Chart` and `MCP + Skills` are functional screens; remaining screens are scaffolded placeholders.
 
 ## Project structure
 
@@ -137,3 +137,13 @@ Notes:
   - 24h token/cost rollups by model
 - Health panel includes:
   - Codex home detection and last-ingest metadata
+## MCP + Skills (inside Electron)
+
+- In the `MCP + Skills` panel, use `Lookback (days)` and `Refresh Snapshot` to scan local Codex session logs.
+- Data source: `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`.
+- Snapshot output includes:
+  - Summary totals (files, lines, MCP tool calls, skill mentions, parse errors)
+  - Top MCP tools (`mcp__*`)
+  - Top skill mentions (`start-feature-flow`, `electron-user-input-flow`, etc.)
+  - Recently scanned session files
+- The renderer never reads local files directly; data is fetched through preload IPC from the Electron main process.

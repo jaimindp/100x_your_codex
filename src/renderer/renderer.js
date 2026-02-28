@@ -31,6 +31,14 @@ const usageRollupsEl = document.getElementById("usage-rollups");
 const healthSummaryEl = document.getElementById("health-summary");
 const themeToggleBtn = document.getElementById("theme-toggle-btn");
 const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
+const mcpDaysInput = document.getElementById("mcp-days-input");
+const mcpRefreshBtn = document.getElementById("mcp-refresh-btn");
+const mcpStatusEl = document.getElementById("mcp-status");
+const mcpLastUpdatedEl = document.getElementById("mcp-last-updated");
+const mcpSummaryEl = document.getElementById("mcp-summary");
+const mcpTopMcpEl = document.getElementById("mcp-top-mcp");
+const mcpTopSkillsEl = document.getElementById("mcp-top-skills");
+const mcpFilesEl = document.getElementById("mcp-files");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
@@ -51,8 +59,12 @@ let graphPanState = {
 let currentScreenId = "overview";
 let currentTheme = "dark";
 const GITHUB_SCAN_ROOTS_STORAGE_KEY = "monitor.githubScan.roots";
+let isMcpSnapshotInFlight = false;
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
+const MCP_MIN_DAYS = 1;
+const MCP_MAX_DAYS = 30;
+const MCP_DEFAULT_DAYS = 7;
 const GRAPH_ZOOM_MIN = 0.2;
 const GRAPH_ZOOM_MAX = 2.2;
 const GRAPH_ZOOM_STEP = 0.15;
@@ -146,6 +158,26 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 
 loadLinearSettings();
 initializeGitRepoScanPanel();
+initializeMcpSkillTracking();
+
+function initializeMcpSkillTracking() {
+  if (!mcpRefreshBtn || !mcpDaysInput) {
+    return;
+  }
+
+  mcpRefreshBtn.addEventListener("click", () => loadMcpSkillSnapshot(false));
+  mcpDaysInput.addEventListener("change", () => {
+    const days = getValidatedMcpDays();
+    mcpDaysInput.value = String(days);
+  });
+
+  setMcpStatus("MCP status: ready");
+  renderMcpList(mcpSummaryEl, [{ label: "Load status", value: "Press Refresh Snapshot" }]);
+  renderMcpList(mcpTopMcpEl, []);
+  renderMcpList(mcpTopSkillsEl, []);
+  renderMcpList(mcpFilesEl, []);
+  loadMcpSkillSnapshot(true);
+}
 
 function initializeThemeControls() {
   if (themeToggleBtn) {
@@ -574,6 +606,132 @@ function renderGithubScanResults(report) {
           <ul class="git-worktree-list">${worktreeItems || "<li>No worktrees listed.</li>"}</ul>
         </section>
       `;
+    })
+    .join("");
+}
+function setMcpStatus(message) {
+  if (mcpStatusEl) {
+    mcpStatusEl.textContent = message;
+  }
+}
+
+function setMcpLastUpdated(isoTimestamp) {
+  if (!mcpLastUpdatedEl) {
+    return;
+  }
+  const date = new Date(isoTimestamp);
+  mcpLastUpdatedEl.textContent = Number.isNaN(date.getTime()) ? "unknown" : date.toLocaleString();
+}
+
+function getValidatedMcpDays() {
+  if (!mcpDaysInput) {
+    return MCP_DEFAULT_DAYS;
+  }
+  const parsed = Number.parseInt(String(mcpDaysInput.value || "").trim(), 10);
+  if (!Number.isFinite(parsed)) {
+    return MCP_DEFAULT_DAYS;
+  }
+  return Math.max(MCP_MIN_DAYS, Math.min(MCP_MAX_DAYS, parsed));
+}
+
+async function loadMcpSkillSnapshot(isAutoLoad) {
+  if (isMcpSnapshotInFlight) {
+    return;
+  }
+
+  if (!window.monitor?.mcpSkillTracking) {
+    setMcpStatus("MCP status: secure tracking bridge unavailable");
+    return;
+  }
+
+  const days = getValidatedMcpDays();
+  if (mcpDaysInput) {
+    mcpDaysInput.value = String(days);
+  }
+
+  isMcpSnapshotInFlight = true;
+  if (mcpRefreshBtn) {
+    mcpRefreshBtn.disabled = true;
+  }
+  if (mcpDaysInput) {
+    mcpDaysInput.disabled = true;
+  }
+  setMcpStatus(
+    isAutoLoad ? "MCP status: loading snapshot from local sessions..." : "MCP status: refreshing..."
+  );
+
+  try {
+    const snapshot = await window.monitor.mcpSkillTracking.getSnapshot({ days });
+    renderMcpSnapshot(snapshot);
+    setMcpStatus(`MCP status: scanned ${snapshot.filesScanned} file(s) over ${snapshot.windowDays} day(s)`);
+    setMcpLastUpdated(snapshot.generatedAt);
+    updateLastRefresh("MCP + Skills");
+  } catch (error) {
+    setMcpStatus(`MCP status: ${errorMessage(error)}`);
+  } finally {
+    isMcpSnapshotInFlight = false;
+    if (mcpRefreshBtn) {
+      mcpRefreshBtn.disabled = false;
+    }
+    if (mcpDaysInput) {
+      mcpDaysInput.disabled = false;
+    }
+  }
+}
+
+function renderMcpSnapshot(snapshot) {
+  if (!snapshot) {
+    return;
+  }
+
+  renderMcpList(mcpSummaryEl, [
+    { label: "Window", value: `${snapshot.windowDays} day(s)` },
+    { label: "Files scanned", value: snapshot.filesScanned },
+    { label: "Lines scanned", value: snapshot.linesScanned },
+    { label: "MCP tool calls", value: snapshot.mcpToolCallsTotal },
+    { label: "Skill mentions", value: snapshot.skillMentionsTotal },
+    { label: "Parse errors", value: snapshot.parseErrors }
+  ]);
+
+  renderMcpList(
+    mcpTopMcpEl,
+    Array.isArray(snapshot.topMcpTools)
+      ? snapshot.topMcpTools.map((item) => ({ label: item.name, value: item.count }))
+      : []
+  );
+
+  renderMcpList(
+    mcpTopSkillsEl,
+    Array.isArray(snapshot.topSkills)
+      ? snapshot.topSkills.map((item) => ({ label: item.name, value: item.count }))
+      : []
+  );
+
+  const warningRows = Array.isArray(snapshot.warnings)
+    ? snapshot.warnings.map((warning) => ({ label: "Warning", value: warning }))
+    : [];
+  const fileRows = Array.isArray(snapshot.recentFiles)
+    ? snapshot.recentFiles.map((filePath) => ({ label: "File", value: filePath }))
+    : [];
+  renderMcpList(mcpFilesEl, [...warningRows, ...fileRows]);
+}
+
+function renderMcpList(containerEl, items) {
+  if (!containerEl) {
+    return;
+  }
+
+  const listItems = Array.isArray(items) ? items : [];
+  if (!listItems.length) {
+    containerEl.innerHTML = `<div class="mcp-list-item"><span class="mcp-item-key">No data</span><span class="mcp-item-value">-</span></div>`;
+    return;
+  }
+
+  containerEl.innerHTML = listItems
+    .map((item) => {
+      const label = escapeHtml(item.label || "Item");
+      const value = escapeHtml(item.value ?? "");
+      return `<div class="mcp-list-item"><span class="mcp-item-key">${label}</span><span class="mcp-item-value">${value}</span></div>`;
     })
     .join("");
 }
