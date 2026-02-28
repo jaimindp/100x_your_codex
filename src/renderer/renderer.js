@@ -88,14 +88,12 @@ let graphPanState = {
 };
 let currentScreenId = "overview";
 let currentTheme = "dark";
-<<<<<<< HEAD
 const GITHUB_SCAN_ROOTS_STORAGE_KEY = "monitor.githubScan.roots";
 let isMcpSnapshotInFlight = false;
 const DEFAULT_GITHUB_SCAN_PAGE_SIZE = 25;
 let githubScanRepos = [];
 let githubScanPage = 1;
 let githubScanPageSize = DEFAULT_GITHUB_SCAN_PAGE_SIZE;
-=======
 let activeOrchestratorRunId = "";
 let timelineRunId = "";
 let orchestratorLogLines = [];
@@ -105,7 +103,6 @@ let orchestratorEventUnsubscribe = null;
 let managedServersById = new Map();
 let selectedManagedServerId = "";
 let managedServerEventUnsubscribe = null;
->>>>>>> hack-39-automated-repo-intake-and-planning
 
 const LINEAR_API_URL = "https://api.linear.app/graphql";
 const MCP_MIN_DAYS = 1;
@@ -206,7 +203,6 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 }
 
 loadLinearSettings();
-<<<<<<< HEAD
 initializeGitRepoScanPanel();
 initializeMcpSkillTracking();
 
@@ -228,10 +224,8 @@ function initializeMcpSkillTracking() {
   renderMcpList(mcpFilesEl, []);
   loadMcpSkillSnapshot(true);
 }
-=======
 initializeOrchestratorControls();
 initializeManagedServerControls();
->>>>>>> hack-39-automated-repo-intake-and-planning
 
 function initializeThemeControls() {
   if (themeToggleBtn) {
@@ -535,6 +529,7 @@ function initializeGitRepoScanPanel() {
   }
 
   githubScanBtn.addEventListener("click", runGithubScanFromInput);
+  githubScanBtn.title = "Run local scan (Shift+Click to bypass cache)";
 
   if (githubPageSizeSelect) {
     githubPageSizeSelect.value = String(DEFAULT_GITHUB_SCAN_PAGE_SIZE);
@@ -624,11 +619,12 @@ function getValidatedGithubScanRootsFromInput() {
   return roots;
 }
 
-async function runGithubScanFromInput() {
+async function runGithubScanFromInput(event) {
   if (!githubScanBtn || !window.monitor?.githubRepos || isGithubScanInFlight) {
     return;
   }
 
+  const forceRefresh = Boolean(event?.shiftKey);
   let roots = [];
   try {
     roots = getValidatedGithubScanRootsFromInput();
@@ -639,14 +635,18 @@ async function runGithubScanFromInput() {
 
   isGithubScanInFlight = true;
   githubScanBtn.disabled = true;
-  setGithubScanStatus("Git scan status: scanning local repositories...");
+  setGithubScanStatus(
+    forceRefresh
+      ? "Git scan status: forcing fresh local scan..."
+      : "Git scan status: checking cache / scanning..."
+  );
   setGithubScanSummary("Scan summary: running...");
 
   try {
-    const report = await window.monitor.githubRepos.scan({ roots });
+    const report = await window.monitor.githubRepos.scan({ roots, force: forceRefresh });
     persistGithubScanRoots(roots.join(", "));
     renderGithubScanResults(report);
-    setGithubScanStatus("Git scan status: completed");
+    setGithubScanStatus(`Git scan status: completed (${formatGithubScanCacheLabel(report?.cache)})`);
     updateLastRefresh("Git + Worktrees");
   } catch (error) {
     setGithubScanStatus(`Git scan status: ${errorMessage(error)}`);
@@ -959,6 +959,38 @@ function normalizeGithubRepo(repo, index) {
     lastCommitUnix: parsePositiveNumber(repo?.lastCommitUnix, 0),
     worktrees
   };
+}
+
+function formatGithubScanCacheLabel(cache) {
+  if (!cache || typeof cache !== "object") {
+    return "fresh";
+  }
+
+  if (cache.hit) {
+    return `cached ${formatDurationShort(cache.ageMs)} ago`;
+  }
+
+  if (cache.source === "fresh-forced") {
+    return "fresh (forced)";
+  }
+  if (cache.source === "in-flight") {
+    return "shared in-flight";
+  }
+  return "fresh";
+}
+
+function formatDurationShort(valueMs) {
+  const totalSeconds = Math.max(0, Math.floor(Number(valueMs || 0) / 1000));
+  if (totalSeconds < 60) {
+    return `${totalSeconds}s`;
+  }
+  if (totalSeconds < 3600) {
+    return `${Math.floor(totalSeconds / 60)}m`;
+  }
+  if (totalSeconds < 86400) {
+    return `${Math.floor(totalSeconds / 3600)}h`;
+  }
+  return `${Math.floor(totalSeconds / 86400)}d`;
 }
 
 function parsePositiveNumber(value, fallback) {

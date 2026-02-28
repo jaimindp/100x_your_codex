@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld("monitor", {
     get: () => ipcRenderer.invoke("theme-settings:get"),
     save: (settings) => ipcRenderer.invoke("theme-settings:save", settings)
   },
-<<<<<<< HEAD
   githubRepos: {
     getDefaultRoot: () => ipcRenderer.invoke("github-repos:get-default-root"),
     scan: (payload) => ipcRenderer.invoke("github-repos:scan", payload)
@@ -20,7 +19,7 @@ contextBridge.exposeInMainWorld("monitor", {
   },
   mcpSkillTracking: {
     getSnapshot: (options) => ipcRenderer.invoke("mcp-skill-tracking:get", options)
-=======
+  },
   managedServers: {
     list: () => ipcRenderer.invoke("managed-servers:list"),
     create: (payload) => ipcRenderer.invoke("managed-servers:create", payload),
@@ -53,6 +52,5 @@ contextBridge.exposeInMainWorld("monitor", {
         ipcRenderer.removeListener("orchestrator:event", handler);
       };
     }
->>>>>>> hack-39-automated-repo-intake-and-planning
   }
 });

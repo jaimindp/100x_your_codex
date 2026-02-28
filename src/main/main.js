@@ -3,19 +3,31 @@ const os = require("os");
 const fsSync = require("fs");
 const fs = require("fs/promises");
 const { spawn } = require("child_process");
-<<<<<<< HEAD
-=======
-const { randomUUID } = require("crypto");
->>>>>>> hack-39-automated-repo-intake-and-planning
+const { randomUUID, createHash } = require("crypto");
 const { app, BrowserWindow, ipcMain } = require("electron");
 const { createMonitorDataService } = require("./monitor-data");
 
 const LINEAR_ENV_KEYS = ["LINEAR_API_KEY", "LINEAR_TEAM_KEY"];
 const ALLOWED_THEMES = new Set(["dark", "light"]);
-<<<<<<< HEAD
 const GITHUB_REPO_SCAN_TIMEOUT_MS = 120000;
+const GITHUB_REPO_SCAN_CACHE_TTL_MS = 5 * 60 * 1000;
+const GITHUB_REPO_SCAN_CACHE_MAX_ENTRIES = 24;
+const GITHUB_REPO_SCAN_CACHE_SCHEMA_VERSION = 1;
+const GITHUB_REPO_SCAN_CACHE_FILE = "github-repo-scan-cache.json";
 const NODE_BIN = process.env.NODE_BIN || "node";
+const ORCHESTRATOR_LOG_LIMIT = 1200;
+const MANAGED_SERVER_LOG_LIMIT = 600;
+const RUN_ACTIVE_STATES = new Set(["starting", "running", "stopping"]);
+const MANAGED_SERVER_ACTIVE_STATES = new Set(["starting", "running", "stopping"]);
+
+const orchestratorRuns = new Map();
+const managedServers = new Map();
+const managedServerRuntime = new Map();
+let managedServersReadyPromise = null;
+
 let monitorDataService = null;
+const githubRepoScanMemoryCache = new Map();
+const githubRepoScanInFlight = new Map();
 const SKILL_NAMES = [
   "start-feature-flow",
   "create-pr-flow",
@@ -33,17 +45,6 @@ const MCP_SNAPSHOT_DEFAULTS = {
   maxLinesPerFile: 2500,
   maxTopItems: 10
 };
-=======
-const ORCHESTRATOR_LOG_LIMIT = 1200;
-const MANAGED_SERVER_LOG_LIMIT = 600;
-const RUN_ACTIVE_STATES = new Set(["starting", "running", "stopping"]);
-const MANAGED_SERVER_ACTIVE_STATES = new Set(["starting", "running", "stopping"]);
-
-const orchestratorRuns = new Map();
-const managedServers = new Map();
-const managedServerRuntime = new Map();
-let managedServersReadyPromise = null;
->>>>>>> hack-39-automated-repo-intake-and-planning
 
 function getEnvFilePath() {
   return path.join(app.getAppPath(), ".env");
@@ -53,7 +54,6 @@ function getThemeSettingsPath() {
   return path.join(app.getPath("userData"), "theme-settings.json");
 }
 
-<<<<<<< HEAD
 function getGithubDiscoveryDefaultRoot() {
   return path.join(os.homedir(), "Documents");
 }
@@ -109,6 +109,151 @@ function getValidatedDiscoveryRoots(payload) {
   });
 
   return normalized;
+}
+
+function getGithubRepoScanCachePath() {
+  return path.join(app.getPath("userData"), GITHUB_REPO_SCAN_CACHE_FILE);
+}
+
+function getGithubRepoScanMaxAgeMs(payload) {
+  const parsed = Number(payload?.maxAgeMs);
+  if (!Number.isFinite(parsed)) {
+    return GITHUB_REPO_SCAN_CACHE_TTL_MS;
+  }
+  return Math.max(10 * 1000, Math.min(parsed, 24 * 60 * 60 * 1000));
+}
+
+function normalizeRootsForCache(roots) {
+  return [...roots]
+    .map((root) => path.resolve(root))
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function buildGithubRepoScanCacheKey(normalizedRoots) {
+  return createHash("sha1").update(normalizedRoots.join("\n")).digest("hex");
+}
+
+function createEmptyGithubRepoScanCache() {
+  return {
+    version: GITHUB_REPO_SCAN_CACHE_SCHEMA_VERSION,
+    entries: {}
+  };
+}
+
+function hasMatchingRoots(leftRoots, rightRoots) {
+  if (!Array.isArray(leftRoots) || !Array.isArray(rightRoots) || leftRoots.length !== rightRoots.length) {
+    return false;
+  }
+  for (let index = 0; index < leftRoots.length; index += 1) {
+    if (leftRoots[index] !== rightRoots[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function isGithubRepoScanCacheEntryFresh(entry, normalizedRoots, maxAgeMs, nowMs) {
+  if (!entry || !entry.report || !hasMatchingRoots(entry.roots, normalizedRoots)) {
+    return false;
+  }
+
+  const cachedAtMs = Number(entry.cachedAtMs || 0);
+  if (!Number.isFinite(cachedAtMs) || cachedAtMs <= 0) {
+    return false;
+  }
+
+  const ageMs = nowMs - cachedAtMs;
+  return ageMs >= 0 && ageMs <= maxAgeMs;
+}
+
+function withGithubRepoScanCacheMeta(report, options) {
+  const cachedAtMs = Number(options.cachedAtMs || Date.now());
+  return {
+    ...report,
+    cache: {
+      hit: Boolean(options.hit),
+      source: options.source || "fresh",
+      cacheKey: options.cacheKey || null,
+      cachedAt: new Date(cachedAtMs).toISOString(),
+      ageMs: Math.max(0, Date.now() - cachedAtMs),
+      maxAgeMs: Number(options.maxAgeMs || GITHUB_REPO_SCAN_CACHE_TTL_MS)
+    }
+  };
+}
+
+function pruneGithubRepoScanMemoryCache() {
+  const entries = Array.from(githubRepoScanMemoryCache.entries());
+  if (entries.length <= GITHUB_REPO_SCAN_CACHE_MAX_ENTRIES) {
+    return;
+  }
+
+  entries.sort((left, right) => Number(right[1]?.cachedAtMs || 0) - Number(left[1]?.cachedAtMs || 0));
+  const keep = new Set(entries.slice(0, GITHUB_REPO_SCAN_CACHE_MAX_ENTRIES).map(([key]) => key));
+  entries.forEach(([key]) => {
+    if (!keep.has(key)) {
+      githubRepoScanMemoryCache.delete(key);
+    }
+  });
+}
+
+async function readGithubRepoScanCacheFile() {
+  const cachePath = getGithubRepoScanCachePath();
+  let source;
+  try {
+    source = await fs.readFile(cachePath, "utf8");
+  } catch (error) {
+    if (error && error.code === "ENOENT") {
+      return createEmptyGithubRepoScanCache();
+    }
+    console.warn("Could not read git scan cache file:", error);
+    return createEmptyGithubRepoScanCache();
+  }
+
+  try {
+    const parsed = JSON.parse(source);
+    if (
+      parsed &&
+      parsed.version === GITHUB_REPO_SCAN_CACHE_SCHEMA_VERSION &&
+      parsed.entries &&
+      typeof parsed.entries === "object"
+    ) {
+      return parsed;
+    }
+  } catch (error) {
+    console.warn("Could not parse git scan cache file:", error);
+  }
+
+  return createEmptyGithubRepoScanCache();
+}
+
+async function writeGithubRepoScanCacheFile(cachePayload) {
+  const cachePath = getGithubRepoScanCachePath();
+  await fs.mkdir(path.dirname(cachePath), { recursive: true });
+  const tempPath = `${cachePath}.tmp`;
+  const source = `${JSON.stringify(cachePayload)}\n`;
+  await fs.writeFile(tempPath, source, "utf8");
+  await fs.rename(tempPath, cachePath);
+}
+
+async function persistGithubRepoScanCacheEntry(cacheKey, entry) {
+  const cachePayload = await readGithubRepoScanCacheFile();
+  cachePayload.entries[cacheKey] = entry;
+
+  const keys = Object.keys(cachePayload.entries);
+  if (keys.length > GITHUB_REPO_SCAN_CACHE_MAX_ENTRIES) {
+    keys
+      .sort(
+        (left, right) =>
+          Number(cachePayload.entries[right]?.cachedAtMs || 0) -
+          Number(cachePayload.entries[left]?.cachedAtMs || 0)
+      )
+      .slice(GITHUB_REPO_SCAN_CACHE_MAX_ENTRIES)
+      .forEach((key) => {
+        delete cachePayload.entries[key];
+      });
+  }
+
+  await writeGithubRepoScanCacheFile(cachePayload);
 }
 
 function runNodeScript(command, args, options = {}) {
@@ -172,12 +317,91 @@ async function runGithubRepoDiscovery(roots) {
     throw new Error("GitHub repo discovery returned invalid JSON.");
   }
 }
+
+async function getGithubRepoDiscoveryReport(roots, options = {}) {
+  const forceRefresh = Boolean(options.forceRefresh);
+  const maxAgeMs = Number.isFinite(options.maxAgeMs)
+    ? options.maxAgeMs
+    : GITHUB_REPO_SCAN_CACHE_TTL_MS;
+  const normalizedRoots = normalizeRootsForCache(roots);
+  const cacheKey = buildGithubRepoScanCacheKey(normalizedRoots);
+  const nowMs = Date.now();
+
+  if (!forceRefresh) {
+    const memoryEntry = githubRepoScanMemoryCache.get(cacheKey);
+    if (isGithubRepoScanCacheEntryFresh(memoryEntry, normalizedRoots, maxAgeMs, nowMs)) {
+      return withGithubRepoScanCacheMeta(memoryEntry.report, {
+        hit: true,
+        source: "memory",
+        cacheKey,
+        maxAgeMs,
+        cachedAtMs: memoryEntry.cachedAtMs
+      });
+    }
+
+    const diskPayload = await readGithubRepoScanCacheFile();
+    const diskEntry = diskPayload.entries[cacheKey];
+    if (isGithubRepoScanCacheEntryFresh(diskEntry, normalizedRoots, maxAgeMs, nowMs)) {
+      githubRepoScanMemoryCache.set(cacheKey, diskEntry);
+      pruneGithubRepoScanMemoryCache();
+      return withGithubRepoScanCacheMeta(diskEntry.report, {
+        hit: true,
+        source: "disk",
+        cacheKey,
+        maxAgeMs,
+        cachedAtMs: diskEntry.cachedAtMs
+      });
+    }
+  }
+
+  const existingScan = githubRepoScanInFlight.get(cacheKey);
+  if (existingScan) {
+    const inFlightReport = await existingScan;
+    const existingEntry = githubRepoScanMemoryCache.get(cacheKey);
+    return withGithubRepoScanCacheMeta(inFlightReport, {
+      hit: false,
+      source: "in-flight",
+      cacheKey,
+      maxAgeMs,
+      cachedAtMs: Number(existingEntry?.cachedAtMs || Date.now())
+    });
+  }
+
+  const scanPromise = (async () => {
+    const report = await runGithubRepoDiscovery(roots);
+    const entry = {
+      roots: normalizedRoots,
+      cachedAtMs: Date.now(),
+      report
+    };
+    githubRepoScanMemoryCache.set(cacheKey, entry);
+    pruneGithubRepoScanMemoryCache();
+    await persistGithubRepoScanCacheEntry(cacheKey, entry);
+    return report;
+  })();
+
+  githubRepoScanInFlight.set(cacheKey, scanPromise);
+  try {
+    const freshReport = await scanPromise;
+    const savedEntry = githubRepoScanMemoryCache.get(cacheKey);
+    return withGithubRepoScanCacheMeta(freshReport, {
+      hit: false,
+      source: forceRefresh ? "fresh-forced" : "fresh",
+      cacheKey,
+      maxAgeMs,
+      cachedAtMs: Number(savedEntry?.cachedAtMs || Date.now())
+    });
+  } finally {
+    githubRepoScanInFlight.delete(cacheKey);
+  }
+}
+
 function getCodexSessionsRootPath() {
   return path.join(os.homedir(), ".codex", "sessions");
-=======
+}
+
 function getManagedServersPath() {
   return path.join(app.getPath("userData"), "managed-servers.json");
->>>>>>> hack-39-automated-repo-intake-and-planning
 }
 
 function parseEnvLine(line) {
@@ -302,7 +526,6 @@ async function saveThemeSettings(theme) {
   return { theme: normalizedTheme };
 }
 
-<<<<<<< HEAD
 function normalizeSnapshotWindowDays(rawValue) {
   const parsed = Number.parseInt(String(rawValue || ""), 10);
   if (!Number.isFinite(parsed)) {
@@ -514,7 +737,8 @@ async function getMcpSkillTrackingSnapshot(rawDays) {
   snapshot.topMcpTools = topCounterEntries(mcpCounter);
   snapshot.topSkills = topCounterEntries(skillCounter);
   return snapshot;
-=======
+}
+
 function parseArgsText(value) {
   const source = String(value || "").trim();
   if (!source) {
@@ -996,7 +1220,21 @@ async function removeManagedServer(serverId) {
   await persistManagedServers();
   emitManagedServerEvent({ type: "removed", serverId: id });
   return buildManagedServerResponse();
->>>>>>> hack-39-automated-repo-intake-and-planning
+}
+
+async function clearStaleServiceWorkerStorage() {
+  const serviceWorkerPath = path.join(app.getPath("userData"), "Service Worker");
+
+  try {
+    await fs.rm(serviceWorkerPath, {
+      recursive: true,
+      force: true,
+      maxRetries: 2,
+      retryDelay: 100
+    });
+  } catch (error) {
+    console.warn("Could not clear stale Service Worker storage:", error);
+  }
 }
 
 function createWindow() {
@@ -1363,7 +1601,9 @@ function getOrchestratorStatus(runId) {
   };
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await clearStaleServiceWorkerStorage();
+
   try {
     monitorDataService = createMonitorDataService();
   } catch (error) {
@@ -1376,13 +1616,15 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("theme-settings:get", () => getThemeSettings());
   ipcMain.handle("theme-settings:save", (_event, settings) => saveThemeSettings(settings?.theme));
-<<<<<<< HEAD
   ipcMain.handle("github-repos:get-default-root", () => ({
     root: getGithubDiscoveryDefaultRoot()
   }));
   ipcMain.handle("github-repos:scan", async (_event, payload) => {
     const roots = getValidatedDiscoveryRoots(payload);
-    return runGithubRepoDiscovery(roots);
+    return getGithubRepoDiscoveryReport(roots, {
+      forceRefresh: Boolean(payload?.force),
+      maxAgeMs: getGithubRepoScanMaxAgeMs(payload)
+    });
   });
   ipcMain.handle("monitor-data:get-dashboard", () =>
     monitorDataService ? monitorDataService.getDashboard() : null
@@ -1394,7 +1636,6 @@ app.whenReady().then(() => {
   ipcMain.handle("mcp-skill-tracking:get", (_event, options) =>
     getMcpSkillTrackingSnapshot(options?.days)
   );
-=======
   ipcMain.handle("managed-servers:list", () => listManagedServers());
   ipcMain.handle("managed-servers:create", (_event, payload) => createManagedServer(payload));
   ipcMain.handle("managed-servers:update", (_event, payload) => updateManagedServer(payload));
@@ -1406,20 +1647,7 @@ app.whenReady().then(() => {
   ipcMain.handle("orchestrator:start", (_event, payload) => startOrchestratorRun(payload));
   ipcMain.handle("orchestrator:stop", (_event, payload) => stopOrchestratorRun(payload?.runId));
   ipcMain.handle("orchestrator:status", (_event, payload) => getOrchestratorStatus(payload?.runId));
-
->>>>>>> hack-39-automated-repo-intake-and-planning
   createWindow();
-
-  // Prime local-first cache after window creation so startup UI is never blocked by ingestion work.
-  if (monitorDataService) {
-    setTimeout(() => {
-      try {
-        monitorDataService.runIngestion();
-      } catch (error) {
-        console.error("Initial monitor ingestion failed:", error);
-      }
-    }, 0);
-  }
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
