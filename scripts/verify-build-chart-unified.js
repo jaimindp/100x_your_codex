@@ -20,13 +20,21 @@ async function run() {
     results.checks.singleBuildChartCard =
       (await page.locator('main[data-screen-panel="build-chart"] .card').count()) === 1;
     results.checks.noSeparateDependencyCanvas = (await page.locator('#dep-map-output').count()) === 0;
-    results.checks.hasUnifiedDependencyMapButton =
-      (await page.locator('#graph-load-dependency-map').count()) === 1;
+    results.checks.noSeparateDependencyMapButton =
+      (await page.locator('#graph-load-dependency-map').count()) === 0;
 
-    await page.click('#graph-load-dependency-map');
+    await page.evaluate(() => {
+      const panel = document.querySelector('#graph-controls-panel');
+      if (panel) {
+        panel.open = true;
+      }
+    });
+
+    await page.click('#graph-load-mock');
     await page.waitForFunction(() => {
-      const el = document.querySelector('#graph-status');
-      return Boolean(el && (el.textContent || '').toLowerCase().includes('dependency map'));
+      const graph = document.querySelector('#graph-output svg');
+      const graphText = (document.querySelector('#graph-output')?.textContent || '').toLowerCase();
+      return Boolean(graph && graphText.includes('eng-101'));
     });
 
     const depMetrics = await page.evaluate(() => {
@@ -47,21 +55,15 @@ async function run() {
       };
     });
 
-    results.metrics.dependency = depMetrics;
+    results.metrics.graph = depMetrics;
     results.checks.detailsPaneHasRoom = depMetrics.detailSectionWidth >= 280;
-    results.checks.dependencyGraphFitsInitialViewport =
+    results.checks.graphFitsInitialViewport =
       depMetrics.graphScrollWidth <= depMetrics.graphClientWidth + 16;
     results.checks.edgesAreCurved = /[CQ]/.test(depMetrics.edgePath);
 
     const dependencyScreenshotPath = path.resolve('electron-build-chart-dependency-verification.png');
     await page.screenshot({ path: dependencyScreenshotPath, fullPage: true });
     results.dependencyScreenshot = dependencyScreenshotPath;
-
-    await page.click('#graph-load-mock');
-    await page.waitForFunction(() => {
-      const el = document.querySelector('#graph-status');
-      return Boolean(el && (el.textContent || '').toLowerCase().includes('mock issues'));
-    });
 
     const linearMetrics = await page.evaluate(() => {
       const detailSection = document.querySelector('.graph-shell > section:last-child');

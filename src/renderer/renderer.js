@@ -3,7 +3,6 @@ const linearTeamKeyInput = document.getElementById("linear-team-key");
 const linearSaveSettingsBtn = document.getElementById("linear-save-settings");
 const graphLoadLinearBtn = document.getElementById("graph-load-linear");
 const graphLoadMockBtn = document.getElementById("graph-load-mock");
-const graphLoadDependencyMapBtn = document.getElementById("graph-load-dependency-map");
 const graphControlsPanel = document.getElementById("graph-controls-panel");
 const graphStatusEl = document.getElementById("graph-status");
 const settingsStatusEl = document.getElementById("settings-status");
@@ -43,77 +42,6 @@ const GRAPH_ZOOM_MAX = 2.2;
 const GRAPH_ZOOM_STEP = 0.15;
 const GRAPH_LABEL_WRAP_CHARS = 20;
 const GRAPH_LABEL_MAX_LINES = 3;
-const DEP_MAP_LABEL_MAX_LINES = 2;
-const DEPENDENCY_TASKS = [
-  { id: "H10", key: "hack-10", title: "app-db-and-ingestion-core", status: "inprog" },
-  { id: "H11", key: "hack-11", title: "usage-cost-dashboard", status: "blocked" },
-  { id: "H12", key: "hack-12", title: "timeline-git-health", status: "blocked" },
-  { id: "H13", key: "hack-13", title: "linear-env-persistence", status: "inprog" },
-  { id: "H14", key: "hack-14", title: "electron-cleanup", status: "inprog" },
-  { id: "H15", key: "hack-15", title: "linear-relation-graph", status: "blocked" },
-  { id: "H16", key: "hack-16", title: "graph-filters-and-export", status: "blocked" },
-  { id: "H17", key: "hack-17", title: "demo-polish-and-packaging", status: "blocked" },
-  { id: "H18", key: "hack-18", title: "mcp-and-skill-tracking", status: "blocked" },
-  { id: "H19", key: "hack-19", title: "live-sessions-and-credit-context", status: "blocked" },
-  { id: "H20", key: "hack-20", title: "worktree-and-dependency-map-tracking", status: "blocked" },
-  { id: "H21", key: "hack-21", title: "cross-view-correlation-and-polish", status: "blocked" },
-  { id: "H22", key: "hack-22", title: "video-creation", status: "blocked" },
-  { id: "H23", key: "hack-23", title: "demo-link-setup", status: "blocked" },
-  { id: "H24", key: "hack-24", title: "linear-graph-reliability-and-security", status: "blocked" },
-  { id: "H25", key: "hack-25", title: "app-shell-integration-and-shared-nav", status: "inprog" },
-  { id: "H26", key: "hack-26", title: "functional-test-pass", status: "blocked" },
-  { id: "H27", key: "hack-27", title: "regression-test-pass", status: "blocked" },
-  { id: "H28", key: "hack-28", title: "performance-target-validation", status: "blocked" },
-  { id: "H29", key: "hack-29", title: "submission-docs-and-packaging", status: "blocked" },
-  { id: "H30", key: "hack-30", title: "worktree-commit-timelines", status: "blocked" },
-  { id: "H31", key: "hack-31", title: "mcp-health", status: "blocked" },
-  { id: "H32", key: "hack-32", title: "linear-done-ticket-build-launch", status: "blocked" },
-  { id: "H33", key: "hack-33", title: "local-server-management", status: "blocked" },
-  { id: "H34", key: "hack-34", title: "dependency-map-interactive-navigation", status: "inprog" },
-  { id: "H35", key: "hack-35", title: "remove-linear-issue-graph-intro-text", status: "inprog" },
-  { id: "H36", key: "hack-36", title: "codex-model-and-cost-usage-tracking", status: "blocked" }
-];
-const DEPENDENCY_EDGES = [
-  ["H10", "H11"],
-  ["H10", "H12"],
-  ["H10", "H15"],
-  ["H10", "H18"],
-  ["H10", "H19"],
-  ["H10", "H20"],
-  ["H13", "H15"],
-  ["H14", "H12"],
-  ["H15", "H16"],
-  ["H16", "H24"],
-  ["H18", "H21"],
-  ["H19", "H21"],
-  ["H20", "H21"],
-  ["H16", "H21"],
-  ["H12", "H30"],
-  ["H20", "H30"],
-  ["H18", "H31"],
-  ["H23", "H32"],
-  ["H20", "H32"],
-  ["H10", "H33"],
-  ["H10", "H36"],
-  ["H14", "H33"],
-  ["H30", "H17"],
-  ["H31", "H17"],
-  ["H32", "H17"],
-  ["H33", "H17"],
-  ["H36", "H17"],
-  ["H24", "H25"],
-  ["H21", "H25"],
-  ["H11", "H17"],
-  ["H12", "H17"],
-  ["H25", "H17"],
-  ["H17", "H22"],
-  ["H22", "H23"],
-  ["H17", "H26"],
-  ["H26", "H27"],
-  ["H27", "H28"],
-  ["H23", "H29"],
-  ["H28", "H29"]
-];
 const SCREEN_META = {
   overview: {
     title: "Overview",
@@ -121,7 +49,7 @@ const SCREEN_META = {
   },
   "build-chart": {
     title: "Build Chart",
-    subtitle: "Parent/sub-issue and blocker relationships."
+    subtitle: "Linear-backed dependency graph (parent + blockers)."
   },
   agents: {
     title: "Agents",
@@ -174,14 +102,8 @@ window.onGraphNodeClick = (nodeId) => {
 initializeNavigation();
 initializeThemeControls();
 initializeGraphNavigationControls();
-renderDependencyMapGraph();
-
-if (graphLoadDependencyMapBtn) {
-  graphLoadDependencyMapBtn.addEventListener("click", async () => {
-    await renderDependencyMapGraph();
-    updateLastRefresh("Build Chart (dependency map)");
-  });
-}
+setGraphStatus("Graph status: waiting for Linear data");
+renderGraphDetailsMessage("Load Linear Issues to render the dependency graph.");
 
 if (graphLoadMockBtn) {
   graphLoadMockBtn.addEventListener("click", async () => {
@@ -325,54 +247,6 @@ function updateLastRefresh(sourceName) {
 
   const now = new Date();
   lastRefreshValueEl.textContent = `${now.toLocaleTimeString()} (${sourceName})`;
-}
-
-async function renderDependencyMapGraph() {
-  if (!window.mermaid || !graphOutputEl) {
-    setGraphStatus("Graph status: Mermaid is not loaded");
-    return;
-  }
-
-  setGraphStatus("Graph status: rendering dependency map...");
-  try {
-    const graphText = buildDependencyMapMermaid();
-    const renderId = `dependency-map-${Date.now()}`;
-    const rendered = await window.mermaid.render(renderId, graphText);
-    graphIssuesByNodeId = new Map();
-    graphOutputEl.innerHTML = rendered.svg;
-    if (typeof rendered.bindFunctions === "function") {
-      rendered.bindFunctions(graphOutputEl);
-    }
-    initializeGraphZoomForRenderedSvg();
-    if (graphDetailsEl) {
-      graphDetailsEl.textContent =
-        "Dependency map view loaded. Load Linear Issues to inspect issue details on node click.";
-    }
-    setGraphStatus(
-      `Graph status: rendered dependency map (${DEPENDENCY_TASKS.length} tasks, ${DEPENDENCY_EDGES.length} dependencies)`
-    );
-  } catch (error) {
-    setGraphStatus(`Graph status: ${errorMessage(error)}`);
-  }
-}
-
-function buildDependencyMapMermaid() {
-  const lines = ["flowchart TB"];
-
-  DEPENDENCY_TASKS.forEach((task) => {
-    const wrappedTitle = wrapLabelText(task.title, GRAPH_LABEL_WRAP_CHARS, DEP_MAP_LABEL_MAX_LINES);
-    lines.push(`${task.id}["${sanitizeLabel(`${task.key}<br/>${wrappedTitle}`)}"]:::${task.status}`);
-  });
-
-  DEPENDENCY_EDGES.forEach(([source, target]) => {
-    lines.push(`${source} --> ${target}`);
-  });
-
-  lines.push("classDef todo fill:#e2e3e5,stroke:#6c757d,color:#343a40");
-  lines.push("classDef inprog fill:#fff3cd,stroke:#b58900,color:#664d03");
-  lines.push("classDef done fill:#d7f7e3,stroke:#1e8e3e,color:#0f5132");
-  lines.push("classDef blocked fill:#f8d7da,stroke:#b02a37,color:#58151c");
-  return lines.join("\n");
 }
 
 async function loadLinearSettings() {
@@ -538,9 +412,10 @@ async function renderIssueGraph(issues) {
   if (typeof rendered.bindFunctions === "function") {
     rendered.bindFunctions(graphOutputEl);
   }
+  applyGraphVisualPolish();
   initializeGraphZoomForRenderedSvg();
   if (graphDetailsEl) {
-    graphDetailsEl.textContent = "Click a node to inspect an issue.";
+    renderGraphDetailsMessage("Click a node to inspect an issue.");
   }
 }
 
@@ -634,7 +509,7 @@ function renderGraphDetails(issue) {
     return;
   }
 
-  const safeId = escapeHtml(issue.identifier || "");
+  const safeId = escapeHtml(issue.identifier || "Issue");
   const safeTitle = escapeHtml(issue.title || "");
   const safeState = escapeHtml(issue.state?.name || "Unknown");
   const safePriority = escapeHtml(priorityLabel(issue.priority));
@@ -643,14 +518,37 @@ function renderGraphDetails(issue) {
   const safeUrl = escapeAttribute(issue.url || "https://linear.app");
 
   graphDetailsEl.innerHTML = `
-    <div class="detail-issue-id">${safeId}</div>
-    <div class="detail-item"><strong>${safeTitle}</strong></div>
-    <div class="detail-item">State: ${safeState}</div>
-    <div class="detail-item">Priority: ${safePriority}</div>
-    <div class="detail-item">Assignee: ${safeAssignee}</div>
-    <div class="detail-item">Updated: ${safeUpdated}</div>
-    <div class="detail-item"><a href="${safeUrl}" target="_blank" rel="noreferrer">Open in Linear</a></div>
+    <article class="issue-detail-card">
+      <div class="detail-topline">
+        <span class="detail-issue-id">${safeId}</span>
+        <span class="detail-state-pill">${safeState}</span>
+      </div>
+      <h4 class="detail-title">${safeTitle}</h4>
+      <div class="detail-grid">
+        <div class="detail-row">
+          <span class="detail-label">Priority</span>
+          <span class="detail-value">${safePriority}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Assignee</span>
+          <span class="detail-value">${safeAssignee}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Updated</span>
+          <span class="detail-value">${safeUpdated}</span>
+        </div>
+      </div>
+      <a class="detail-link" href="${safeUrl}" target="_blank" rel="noreferrer">Open in Linear</a>
+    </article>
   `;
+}
+
+function renderGraphDetailsMessage(message) {
+  if (!graphDetailsEl) {
+    return;
+  }
+
+  graphDetailsEl.innerHTML = `<p class="graph-details-placeholder">${escapeHtml(message)}</p>`;
 }
 
 function formatDate(isoTimestamp) {
@@ -1086,6 +984,23 @@ function getGraphSvg() {
     return null;
   }
   return graphOutputEl.querySelector("svg");
+}
+
+function applyGraphVisualPolish() {
+  if (!graphOutputEl) {
+    return;
+  }
+
+  graphOutputEl.querySelectorAll(".node rect").forEach((nodeRect) => {
+    nodeRect.setAttribute("rx", "12");
+    nodeRect.setAttribute("ry", "12");
+  });
+
+  graphOutputEl.querySelectorAll(".edgePaths path").forEach((edgePath) => {
+    edgePath.setAttribute("stroke-linecap", "round");
+    edgePath.setAttribute("stroke-linejoin", "round");
+    edgePath.setAttribute("stroke-width", "2");
+  });
 }
 
 function applyGraphZoom() {

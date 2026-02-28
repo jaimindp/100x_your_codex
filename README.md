@@ -1,7 +1,7 @@
 # Monitor Electron App
 
 Electron monitor UI that can start/stop `codex app-server` and stream logs.
-It includes a unified Mermaid-based Build Chart view for dependency map + Linear issue DAG data.
+It includes a unified Mermaid-based Build Chart view for Linear dependency relationships.
 
 ## App shell + shared navigation
 
@@ -78,9 +78,9 @@ CODEX_BIN=/absolute/path/to/codex npm run start
 
 ## Build Chart (inside Electron)
 
-- In the `Build Chart` panel, you can use one shared graph area for both data sources:
-  - `Show Dependency Map` for local task DAG view.
-  - `Load Mock Data` for a local Linear graph preview.
+- In the `Build Chart` panel, you can use one shared graph area:
+  - `Load Linear Issues` renders the dependency map from Linear parent/sub-issue + blocker edges.
+  - `Load Mock Data` is a demo fallback using the same graph model.
   - `Load Linear Issues` with:
     - `Linear API Key` (personal API key)
     - `Team Key` (example: `ENG`)
