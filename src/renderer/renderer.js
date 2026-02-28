@@ -15,8 +15,8 @@ const graphNavHintEl = document.getElementById("graph-nav-hint");
 const screenTitleEl = document.getElementById("screen-title");
 const screenSubtitleEl = document.getElementById("screen-subtitle");
 const lastRefreshValueEl = document.getElementById("last-refresh-value");
-const themeDarkBtn = document.getElementById("theme-dark-btn");
-const themeLightBtn = document.getElementById("theme-light-btn");
+const themeToggleBtn = document.getElementById("theme-toggle-btn");
+const themeToggleGlyph = document.getElementById("theme-toggle-glyph");
 const navButtons = Array.from(document.querySelectorAll(".nav-btn"));
 const screenPanels = Array.from(document.querySelectorAll("[data-screen-panel]"));
 
@@ -44,21 +44,17 @@ const SCREEN_META = {
     title: "Overview",
     subtitle: "Shared app shell and cross-screen navigation."
   },
-  timeline: {
-    title: "Timeline",
-    subtitle: "Session and event history."
+  "build-chart": {
+    title: "Build Chart",
+    subtitle: "Parent/sub-issue and blocker relationships."
   },
-  "live-sessions": {
-    title: "Live Sessions",
-    subtitle: "Active sessions and status."
+  agents: {
+    title: "Agents",
+    subtitle: "Active agent sessions and status."
   },
   usage: {
     title: "Usage",
-    subtitle: "Usage and cost visibility."
-  },
-  "credits-context": {
-    title: "Credits + Context",
-    subtitle: "Rate limits and context pressure."
+    subtitle: "Usage, timeline, and credits/context visibility."
   },
   "mcp-skills": {
     title: "MCP + Skills",
@@ -68,14 +64,6 @@ const SCREEN_META = {
     title: "Git + Worktrees",
     subtitle: "Branch/worktree health."
   },
-  "dependency-map": {
-    title: "Dependency Map",
-    subtitle: "Task DAG and delivery status."
-  },
-  "linear-graph": {
-    title: "Linear Graph",
-    subtitle: "Parent/sub-issue and blocker relationships."
-  },
   health: {
     title: "Health",
     subtitle: "Operational reliability signals."
@@ -83,14 +71,6 @@ const SCREEN_META = {
   settings: {
     title: "Settings",
     subtitle: "Runtime configuration."
-  },
-  "build-snapshots": {
-    title: "Build Snapshots",
-    subtitle: "Local build snapshot launch points."
-  },
-  "server-manager": {
-    title: "Server Manager",
-    subtitle: "Managed local server controls."
   }
 };
 
@@ -125,7 +105,7 @@ if (graphLoadMockBtn) {
       const issues = getMockIssues();
       await renderIssueGraph(issues);
       setGraphStatus(`Graph status: rendered ${issues.length} mock issues`);
-      updateLastRefresh("Linear Graph (mock)");
+      updateLastRefresh("Build Chart (mock)");
     } catch (error) {
       setGraphStatus(`Graph status: ${errorMessage(error)}`);
     }
@@ -143,11 +123,10 @@ if (linearSaveSettingsBtn && linearApiKeyInput && linearTeamKeyInput) {
 loadLinearSettings();
 
 function initializeThemeControls() {
-  if (themeDarkBtn) {
-    themeDarkBtn.addEventListener("click", () => setThemePreference("dark"));
-  }
-  if (themeLightBtn) {
-    themeLightBtn.addEventListener("click", () => setThemePreference("light"));
+  if (themeToggleBtn) {
+    themeToggleBtn.addEventListener("click", () => {
+      setThemePreference(currentTheme === "dark" ? "light" : "dark");
+    });
   }
 
   loadThemeSettings();
@@ -192,16 +171,19 @@ function applyTheme(theme) {
   currentTheme = normalizedTheme;
   document.documentElement.setAttribute("data-theme", normalizedTheme);
 
-  if (themeDarkBtn) {
-    const isDark = normalizedTheme === "dark";
-    themeDarkBtn.classList.toggle("is-active", isDark);
-    themeDarkBtn.setAttribute("aria-pressed", String(isDark));
+  if (themeToggleBtn) {
+    themeToggleBtn.setAttribute(
+      "aria-label",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute(
+      "title",
+      normalizedTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"
+    );
+    themeToggleBtn.setAttribute("aria-pressed", String(normalizedTheme === "light"));
   }
-
-  if (themeLightBtn) {
-    const isLight = normalizedTheme === "light";
-    themeLightBtn.classList.toggle("is-active", isLight);
-    themeLightBtn.setAttribute("aria-pressed", String(isLight));
+  if (themeToggleGlyph) {
+    themeToggleGlyph.textContent = normalizedTheme === "dark" ? "🌙" : "☀";
   }
 }
 
@@ -386,8 +368,8 @@ async function loadLinearIssuesFromInputs(isAutoLoad) {
     const issues = await getTeamIssues(apiKey, team.id);
     await renderIssueGraph(issues);
     setGraphStatus(`Graph status: rendered ${issues.length} issues from ${team.key}`);
+    updateLastRefresh("Build Chart");
     setSettingsStatus(`Settings status: saved and loaded ${issues.length} issues from ${team.key}`);
-    updateLastRefresh("Linear Graph");
     collapseGraphSettingsIfConfigured(apiKey, teamKey);
   } catch (error) {
     const message = errorMessage(error);
