@@ -11,6 +11,23 @@ const ALLOWED_THEMES = new Set(["dark", "light"]);
 const GITHUB_REPO_SCAN_TIMEOUT_MS = 120000;
 const NODE_BIN = process.env.NODE_BIN || "node";
 let monitorDataService = null;
+const SKILL_NAMES = [
+  "start-feature-flow",
+  "create-pr-flow",
+  "electron-user-input-flow",
+  "finish-feature-flow",
+  "skill-creator",
+  "skill-installer"
+];
+
+const MCP_SNAPSHOT_DEFAULTS = {
+  minDays: 1,
+  maxDays: 30,
+  defaultDays: 7,
+  maxFiles: 50,
+  maxLinesPerFile: 2500,
+  maxTopItems: 10
+};
 
 function getEnvFilePath() {
   return path.join(app.getAppPath(), ".env");
@@ -138,6 +155,9 @@ async function runGithubRepoDiscovery(roots) {
     throw new Error("GitHub repo discovery returned invalid JSON.");
   }
 }
+function getCodexSessionsRootPath() {
+  return path.join(os.homedir(), ".codex", "sessions");
+}
 
 function parseEnvLine(line) {
   const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)\s*$/);
@@ -261,6 +281,219 @@ async function saveThemeSettings(theme) {
   return { theme: normalizedTheme };
 }
 
+function normalizeSnapshotWindowDays(rawValue) {
+  const parsed = Number.parseInt(String(rawValue || ""), 10);
+  if (!Number.isFinite(parsed)) {
+    return MCP_SNAPSHOT_DEFAULTS.defaultDays;
+  }
+  return Math.max(MCP_SNAPSHOT_DEFAULTS.minDays, Math.min(MCP_SNAPSHOT_DEFAULTS.maxDays, parsed));
+}
+
+function formatDatePathPart(value) {
+  return String(value).padStart(2, "0");
+}
+
+function getRecentSessionDatePaths(days) {
+  const paths = [];
+  const now = new Date();
+  for (let offset = 0; offset < days; offset += 1) {
+    const date = new Date(now);
+    date.setDate(now.getDate() - offset);
+    const year = String(date.getFullYear());
+    const month = formatDatePathPart(date.getMonth() + 1);
+    const day = formatDatePathPart(date.getDate());
+    paths.push(path.join(year, month, day));
+  }
+  return paths;
+}
+
+async function listSessionFilesInWindow(days) {
+  const root = getCodexSessionsRootPath();
+  const files = [];
+  const dateDirs = getRecentSessionDatePaths(days);
+
+  for (const relDir of dateDirs) {
+    const absDir = path.join(root, relDir);
+    let entries = [];
+    try {
+      entries = await fs.readdir(absDir, { withFileTypes: true });
+    } catch (error) {
+      if (error && error.code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+
+    entries.forEach((entry) => {
+      if (!entry.isFile()) {
+        return;
+      }
+      if (!entry.name.endsWith(".jsonl")) {
+        return;
+      }
+      if (!entry.name.startsWith("rollout-")) {
+        return;
+      }
+      files.push(path.join(absDir, entry.name));
+    });
+  }
+
+  const filesWithStats = await Promise.all(
+    files.map(async (filePath) => {
+      try {
+        const stat = await fs.stat(filePath);
+        return {
+          filePath,
+          mtimeMs: stat.mtimeMs
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return filesWithStats
+    .filter(Boolean)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .slice(0, MCP_SNAPSHOT_DEFAULTS.maxFiles)
+    .map((item) => item.filePath);
+}
+
+function bumpCounter(counter, key, count = 1) {
+  if (!key) {
+    return;
+  }
+  counter.set(key, (counter.get(key) || 0) + count);
+}
+
+function topCounterEntries(counter) {
+  return Array.from(counter.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, MCP_SNAPSHOT_DEFAULTS.maxTopItems)
+    .map(([name, count]) => ({ name, count }));
+}
+
+function walkForMcpTools(value, foundTools, depth = 0) {
+  if (depth > 12 || value == null) {
+    return;
+  }
+
+  if (typeof value === "string") {
+    const matches = value.match(/\bmcp__[a-z0-9_]+(?:__[a-z0-9_]+)?\b/gi);
+    if (matches) {
+      matches.forEach((match) => {
+        foundTools.add(match.toLowerCase());
+      });
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => walkForMcpTools(item, foundTools, depth + 1));
+    return;
+  }
+
+  if (typeof value === "object") {
+    Object.entries(value).forEach(([key, childValue]) => {
+      walkForMcpTools(key, foundTools, depth + 1);
+      walkForMcpTools(childValue, foundTools, depth + 1);
+    });
+  }
+}
+
+function findMentionedSkills(sourceText) {
+  const lower = String(sourceText || "").toLowerCase();
+  const mentions = [];
+  SKILL_NAMES.forEach((skillName) => {
+    if (lower.includes(skillName.toLowerCase())) {
+      mentions.push(skillName);
+    }
+  });
+  return mentions;
+}
+
+async function getMcpSkillTrackingSnapshot(rawDays) {
+  const windowDays = normalizeSnapshotWindowDays(rawDays);
+  const snapshot = {
+    generatedAt: new Date().toISOString(),
+    sessionsRoot: getCodexSessionsRootPath(),
+    windowDays,
+    filesScanned: 0,
+    linesScanned: 0,
+    parseErrors: 0,
+    mcpToolCallsTotal: 0,
+    skillMentionsTotal: 0,
+    topMcpTools: [],
+    topSkills: [],
+    recentFiles: [],
+    warnings: []
+  };
+
+  let files = [];
+  try {
+    files = await listSessionFilesInWindow(windowDays);
+  } catch (error) {
+    snapshot.warnings.push(`Could not list session files: ${error.message}`);
+    return snapshot;
+  }
+
+  if (!files.length) {
+    snapshot.warnings.push("No rollout session files found for the selected window.");
+    return snapshot;
+  }
+
+  snapshot.filesScanned = files.length;
+  snapshot.recentFiles = files.slice(0, 10);
+
+  const mcpCounter = new Map();
+  const skillCounter = new Map();
+
+  for (const filePath of files) {
+    let source = "";
+    try {
+      source = await fs.readFile(filePath, "utf8");
+    } catch (error) {
+      snapshot.warnings.push(`Could not read ${filePath}: ${error.message}`);
+      continue;
+    }
+
+    const lines = source.split(/\r?\n/).slice(0, MCP_SNAPSHOT_DEFAULTS.maxLinesPerFile);
+    snapshot.linesScanned += lines.length;
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+
+      let parsed = null;
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        snapshot.parseErrors += 1;
+        continue;
+      }
+
+      const foundTools = new Set();
+      walkForMcpTools(parsed, foundTools);
+      foundTools.forEach((toolName) => {
+        bumpCounter(mcpCounter, toolName);
+        snapshot.mcpToolCallsTotal += 1;
+      });
+
+      const mentionedSkills = findMentionedSkills(trimmed);
+      mentionedSkills.forEach((skillName) => {
+        bumpCounter(skillCounter, skillName);
+        snapshot.skillMentionsTotal += 1;
+      });
+    }
+  }
+
+  snapshot.topMcpTools = topCounterEntries(mcpCounter);
+  snapshot.topSkills = topCounterEntries(skillCounter);
+  return snapshot;
+}
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -304,6 +537,9 @@ app.whenReady().then(() => {
     monitorDataService ? monitorDataService.runIngestion() : null
   );
 
+  ipcMain.handle("mcp-skill-tracking:get", (_event, options) =>
+    getMcpSkillTrackingSnapshot(options?.days)
+  );
   createWindow();
 
   // Prime local-first cache after window creation so startup UI is never blocked by ingestion work.

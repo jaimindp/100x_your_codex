@@ -16,5 +16,8 @@ contextBridge.exposeInMainWorld("monitor", {
   monitorData: {
     getDashboard: () => ipcRenderer.invoke("monitor-data:get-dashboard"),
     runIngestion: () => ipcRenderer.invoke("monitor-data:run-ingestion")
+  },
+  mcpSkillTracking: {
+    getSnapshot: (options) => ipcRenderer.invoke("mcp-skill-tracking:get", options)
   }
 });

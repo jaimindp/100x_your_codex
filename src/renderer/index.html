@@ -134,7 +134,41 @@
         </main>
 
         <main class="screen-panel" data-screen-panel="mcp-skills">
-          <div class="card"><h3>MCP + Skills</h3><p>MCP and skills placeholder.</p></div>
+          <div class="card mcp-skills-card">
+            <header class="mcp-skills-header">
+              <h3>MCP + Skills</h3>
+              <p>Local Codex session scan for MCP tool calls and skill mentions.</p>
+            </header>
+            <div class="mcp-controls">
+              <label for="mcp-days-input">Lookback (days)</label>
+              <input id="mcp-days-input" type="number" min="1" max="30" step="1" value="7" />
+              <button id="mcp-refresh-btn" type="button">Refresh Snapshot</button>
+            </div>
+            <p id="mcp-status" class="mcp-status">MCP status: idle</p>
+            <p class="mcp-meta">
+              Last updated: <span id="mcp-last-updated">never</span>
+            </p>
+
+            <div class="mcp-grid">
+              <section class="mcp-panel">
+                <h4>Summary</h4>
+                <div id="mcp-summary" class="mcp-list"></div>
+              </section>
+              <section class="mcp-panel">
+                <h4>Top MCP Tools</h4>
+                <div id="mcp-top-mcp" class="mcp-list"></div>
+              </section>
+              <section class="mcp-panel">
+                <h4>Top Skills</h4>
+                <div id="mcp-top-skills" class="mcp-list"></div>
+              </section>
+            </div>
+
+            <section class="mcp-panel">
+              <h4>Recent Session Files</h4>
+              <div id="mcp-files" class="mcp-list"></div>
+            </section>
+          </div>
         </main>
 
         <main class="screen-panel" data-screen-panel="git-worktrees">
