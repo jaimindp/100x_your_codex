@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld("monitor", {
       return () => ipcRenderer.removeListener("codex-server:log", listener);
     }
   },
+  linearSettings: {
+    get: () => ipcRenderer.invoke("linear-settings:get"),
+    save: (settings) => ipcRenderer.invoke("linear-settings:save", settings)
+  },
   versions: {
     chrome: process.versions.chrome,
     electron: process.versions.electron,

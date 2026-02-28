@@ -127,6 +127,7 @@ if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
     setGraphStatus("Graph status: loading team...");
     graphLoadLinearBtn.disabled = true;
     try {
+      await persistLinearSettings(apiKey, teamKey);
       const team = await getTeamByKey(apiKey, teamKey);
       if (!team) {
         setGraphStatus(`Graph status: team "${teamKey}" not found`);
@@ -143,6 +144,8 @@ if (graphLoadLinearBtn && linearApiKeyInput && linearTeamKeyInput) {
     }
   });
 }
+
+loadLinearSettings();
 
 unsubscribeState = window.monitor.codexServer.onState((state) => {
   renderStatus(state);
@@ -165,6 +168,27 @@ function setGraphStatus(message) {
   if (graphStatusEl) {
     graphStatusEl.textContent = message;
   }
+}
+
+async function loadLinearSettings() {
+  if (!linearApiKeyInput || !linearTeamKeyInput || !window.monitor.linearSettings) {
+    return;
+  }
+
+  try {
+    const settings = await window.monitor.linearSettings.get();
+    linearApiKeyInput.value = settings.apiKey || "";
+    linearTeamKeyInput.value = settings.teamKey || "";
+  } catch (error) {
+    setGraphStatus(`Graph status: could not load .env settings (${errorMessage(error)})`);
+  }
+}
+
+async function persistLinearSettings(apiKey, teamKey) {
+  if (!window.monitor.linearSettings) {
+    return;
+  }
+  await window.monitor.linearSettings.save({ apiKey, teamKey });
 }
 
 function errorMessage(error) {
